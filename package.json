@@ -16,7 +16,7 @@
     "test": "npm --workspaces run test"
   },
   "engines": {
-    "node": "20.x",
+    "node": "20.x"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
