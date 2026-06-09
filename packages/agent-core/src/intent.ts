@@ -1,4 +1,4 @@
-import type { AgentIntent } from "./types.js";
+import type { AgentIntent } from "./types";
 
 export function classifyIntent(message: string): AgentIntent {
   const text = message.toLowerCase();
