@@ -1,5 +1,5 @@
-import type { PickCard, SearchToolInput, SearchToolResult } from "../types.js";
-import { mockPickCards } from "../mock-data.js";
+import type { PickCard, SearchToolInput, SearchToolResult } from "../types";
+import { mockPickCards } from "../mock-data";
 
 type ExaResult = {
   id?: string;
