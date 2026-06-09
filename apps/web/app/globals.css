@@ -351,6 +351,20 @@ select {
   text-align: center;
 }
 
+.chat-message-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-message-row.user {
+  align-items: flex-end;
+}
+
+.chat-message-row.assistant {
+  align-items: flex-start;
+}
+
 .chat-bubble {
   display: inline-flex;
   gap: 12px;
@@ -369,6 +383,53 @@ select {
 
 .chat-bubble.assistant {
   align-self: flex-start;
+}
+
+.chat-card-carousel {
+  display: flex;
+  gap: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+}
+
+.chat-result-card {
+  flex: 0 0 240px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  padding: 14px;
+  box-shadow: 0 12px 22px rgba(23, 43, 77, 0.06);
+}
+
+.chat-result-top,
+.chat-result-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.chat-result-card strong {
+  display: block;
+  margin: 10px 0 6px;
+}
+
+.chat-result-card p {
+  font-size: 13px;
+  line-height: 1.45;
+  max-height: 56px;
+  overflow: hidden;
+}
+
+.chat-result-footer {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.chat-result-footer a {
+  color: var(--blue);
+  font-weight: 900;
 }
 
 .robot {
