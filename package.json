@@ -3,13 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "description": "Agentic GoAround SG hackathon MVP monorepo",
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm --filter @goaround/web dev",
-    "build": "pnpm --filter @goaround/agent-core build && pnpm --filter @goaround/web build",
-    "lint": "pnpm --filter @goaround/web lint",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "dev": "npm --workspace=@goaround/web run dev",
+    "build": "npm --workspace=@goaround/agent-core run build && npm --workspace=@goaround/web run build",
+    "lint": "npm --workspace=@goaround/web run lint",
+    "typecheck": "npm --workspaces run typecheck",
+    "test": "npm --workspaces run test"
   },
   "engines": {
     "node": "20.x"
