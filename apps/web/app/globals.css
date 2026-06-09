@@ -115,6 +115,27 @@ select {
   margin: 0 0 6px;
 }
 
+.context-stat {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #fbfdff;
+  border-radius: 16px;
+}
+
+.context-stat span,
+.context-stat small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-stat strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 14px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -160,6 +181,23 @@ select {
   font-weight: 800;
 }
 
+.filter-pill {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: #344054;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.filter-pill.active {
+  border-color: #b8d0ff;
+  background: #eef4ff;
+  color: #175cd3;
+}
+
 .button-primary {
   width: 100%;
   border: 0;
@@ -197,6 +235,7 @@ select {
   border-radius: 13px;
   font-weight: 900;
   color: #667085;
+  cursor: pointer;
 }
 
 .mode-toggle a.active {
@@ -223,6 +262,15 @@ select {
   flex-direction: column;
 }
 
+.chat-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
 .chat-bubble {
   display: inline-flex;
   gap: 12px;
@@ -234,8 +282,17 @@ select {
   line-height: 1.55;
 }
 
+.chat-bubble.user {
+  align-self: flex-end;
+  background: #e9f2ff;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+}
+
 .robot {
-  margin: 70px auto 16px;
+  margin: 56px auto 16px;
   width: 180px;
   height: 150px;
   border-radius: 42px;
@@ -292,6 +349,14 @@ select {
   font-weight: 900;
 }
 
+.pick-filter-card {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  background: #fbfdff;
+  border-radius: 18px;
+  padding: 14px;
+}
+
 .pick-list {
   display: grid;
   gap: 14px;
@@ -341,6 +406,7 @@ select {
   padding: 8px 11px;
   color: var(--blue);
   font-weight: 900;
+  cursor: pointer;
 }
 
 .trace {
