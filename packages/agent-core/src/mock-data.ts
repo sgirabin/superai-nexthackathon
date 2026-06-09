@@ -1,4 +1,4 @@
-import type { AgentResponse, PickCard, PromotionDraft, UserContext } from "./types.js";
+import type { AgentResponse, PickCard, PromotionDraft, UserContext } from "./types";
 
 export const defaultUserContext: UserContext = {
   mode: "resident",
