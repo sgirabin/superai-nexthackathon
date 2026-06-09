@@ -1,0 +1,16 @@
+{
+  "name": "agentic-goaround-sg",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @goaround/web dev",
+    "build": "pnpm --filter @goaround/web build",
+    "lint": "pnpm --filter @goaround/web lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
