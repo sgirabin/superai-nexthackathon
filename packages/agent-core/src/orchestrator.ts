@@ -1,8 +1,8 @@
-import type { AgentRequest, AgentResponse, AgentTraceStep } from "./types.js";
-import { mockAgentResponse } from "./mock-data.js";
-import { classifyIntent, buildSearchQuery } from "./intent.js";
-import { rankCards } from "./ranking.js";
-import { searchWithExa } from "./tools/exa.js";
+import type { AgentRequest, AgentResponse, AgentTraceStep } from "./types";
+import { mockAgentResponse } from "./mock-data";
+import { classifyIntent, buildSearchQuery } from "./intent";
+import { rankCards } from "./ranking";
+import { searchWithExa } from "./tools/exa";
 
 function nowIso(): string {
   return new Date().toISOString();
