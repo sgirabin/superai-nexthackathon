@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  buildFallbackPickCards,
   defaultUserContext,
   mockAgentResponse,
   mockPromotionDraft,
@@ -11,7 +12,7 @@ import {
 } from "@goaround/agent-core";
 
 type Mode = "user" | "business";
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string; cards?: PickCard[] };
 type LocationState = {
   status: "detecting" | "detected" | "fallback" | "denied" | "unsupported";
   label: string;
@@ -138,6 +139,25 @@ function inferTimeUse(date: Date) {
   return "Evening context: better for dinner, groceries, events and indoor options.";
 }
 
+function buildLocalResponse(context: UserContext): AgentResponse {
+  const area = context.locationName.replace(/^near\s+/i, "") || "your area";
+  return {
+    ...mockAgentResponse,
+    runId: `local-${area.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    answer: `I prepared today's source-backed starting picks for ${area}. Ask me what you want to do and I will search live sources, rank options, and explain why each option is shown.`,
+    cards: buildFallbackPickCards(context),
+    fallbackUsed: true,
+    trace: [
+      {
+        step: "Prepare local context",
+        status: "success",
+        detail: `Loaded fallback starting picks for ${area}. Ask a question to trigger live Exa search.`,
+        tool: "orchestrator"
+      }
+    ]
+  };
+}
+
 function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location: LocationState; localTime: Date; weather: WeatherState }) {
   return (
     <aside className="sidebar">
@@ -214,6 +234,28 @@ function cardMatchesInterest(card: PickCard, interests: string[]) {
     if ((text.includes("grocery") || text.includes("groceries")) && card.category === "grocery") return true;
     return haystack.includes(text.replace("&", "").trim()) || haystack.includes(text.split(" ")[0]);
   });
+}
+
+function ResultCarousel({ cards }: { cards: PickCard[] }) {
+  if (cards.length === 0) return null;
+  return (
+    <div className="chat-card-carousel">
+      {cards.slice(0, 5).map((card) => (
+        <article className="chat-result-card" key={card.id}>
+          <div className="chat-result-top">
+            <span className="tag">{card.category}</span>
+            <CategoryIcon category={card.category} />
+          </div>
+          <strong>{card.title}</strong>
+          <p className="muted">{card.description}</p>
+          <div className="chat-result-footer">
+            <span>{card.distanceKm ? `📍 ${card.distanceKm} km` : "Source-backed"}</span>
+            <a href={card.sourceUrl} target="_blank">Source ↗</a>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
 }
 
 function PicksPanel({
@@ -309,11 +351,16 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
   setInterests: (value: string[]) => void;
 }) {
   const [input, setInput] = useState("");
-  const [response, setResponse] = useState<AgentResponse>(mockAgentResponse);
+  const [response, setResponse] = useState<AgentResponse>(() => buildLocalResponse(userContext));
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: "welcome", role: "assistant", content: welcomeMessage }
   ]);
+
+  useEffect(() => {
+    if (messages.length !== 1) return;
+    setResponse(buildLocalResponse(userContext));
+  }, [messages.length, userContext]);
 
   async function askAgent(message: string) {
     if (!message.trim()) return;
@@ -329,11 +376,12 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
       });
       const data = (await res.json()) as AgentResponse;
       setResponse(data);
-      setMessages((current) => [...current, { id: data.runId, role: "assistant", content: data.answer }]);
+      setMessages((current) => [...current, { id: data.runId, role: "assistant", content: data.answer, cards: data.cards }]);
     } catch {
       const fallback = "I hit a temporary error while calling the agent, so I kept the safe fallback picks visible. Please try again.";
-      setResponse(mockAgentResponse);
-      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: fallback }]);
+      const fallbackResponse = buildLocalResponse(userContext);
+      setResponse(fallbackResponse);
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: fallback, cards: fallbackResponse.cards }]);
     } finally {
       setLoading(false);
     }
@@ -356,9 +404,12 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
 
         <div className="chat-scroll flexible-scroll">
           {messages.map((message) => (
-            <div className={`chat-bubble ${message.role}`} key={message.id}>
-              <span>{message.role === "assistant" ? "🤖" : "👤"}</span>
-              <span>{message.content}</span>
+            <div className={`chat-message-row ${message.role}`} key={message.id}>
+              <div className={`chat-bubble ${message.role}`}>
+                <span>{message.role === "assistant" ? "🤖" : "👤"}</span>
+                <span>{message.content}</span>
+              </div>
+              {message.role === "assistant" && message.cards && <ResultCarousel cards={message.cards} />}
             </div>
           ))}
           {loading && <div className="chat-bubble assistant"><span>🤖</span><span>Searching live sources and ranking local picks…</span></div>}
