@@ -1,6 +1,6 @@
 {
-  "buildCommand": "pnpm --filter @goaround/agent-core build && pnpm --filter @goaround/web build",
-  "installCommand": "corepack enable && corepack prepare pnpm@10.14.0 --activate && pnpm install --frozen-lockfile=false",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --workspaces --include-workspace-root --legacy-peer-deps",
   "outputDirectory": "apps/web/.next",
   "framework": "nextjs"
 }
