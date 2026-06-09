@@ -1,9 +1,25 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { defaultUserContext, mockAgentResponse, mockPromotionDraft, type AgentResponse, type PickCard } from "@goaround/agent-core";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  defaultUserContext,
+  mockAgentResponse,
+  mockPromotionDraft,
+  type AgentResponse,
+  type PickCard,
+  type UserContext
+} from "@goaround/agent-core";
 
 type Mode = "user" | "business";
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
+type LocationState = {
+  status: "detecting" | "detected" | "fallback" | "denied" | "unsupported";
+  label: string;
+  detail: string;
+  contextName: string;
+  lat?: number;
+  lon?: number;
+};
 
 const quickPrompts = [
   "Where can I eat cheap near me?",
@@ -11,6 +27,9 @@ const quickPrompts = [
   "Indoor activities for rainy days",
   "Show me grocery deals nearby"
 ];
+
+const welcomeMessage =
+  "Hi, I’m Ask GoAround. I can search live sources and rank nearby food, activities, deals, or rainy-day ideas around your current area. Try one of the prompts below or ask your own question.";
 
 function CategoryIcon({ category }: { category: PickCard["category"] }) {
   const iconMap: Record<string, string> = {
@@ -26,7 +45,16 @@ function CategoryIcon({ category }: { category: PickCard["category"] }) {
   return <span style={{ fontSize: 42 }}>{iconMap[category] ?? "📍"}</span>;
 }
 
-function Sidebar({ mode }: { mode: Mode }) {
+function formatLocalTime(date: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short"
+  }).format(date);
+}
+
+function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location: LocationState; localTime: Date; weather: string }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -45,18 +73,25 @@ function Sidebar({ mode }: { mode: Mode }) {
       {mode === "user" ? (
         <div className="context-card">
           <h3>📍 My area</h3>
-          <div className="muted">Tell us where you are to get better picks.</div>
-          <div className="field-label">I am here as</div>
-          <div className="field">Resident</div>
-          <div className="field-label">Try location</div>
-          <div className="field">Sengkang</div>
-          <div className="field-label">Discovery radius <span style={{ float: "right", color: "var(--blue)" }}>1.5 km</span></div>
-          <input type="range" min="0.5" max="3" step="0.1" defaultValue="1.5" style={{ width: "100%" }} />
-          <div className="field-label">Interests</div>
-          <div className="pill-row">
-            {defaultUserContext.interests.map((item) => <span className="pill" key={item}>{item} ×</span>)}
+          <div className="muted">GoAround uses this context to personalise today&apos;s picks.</div>
+
+          <div className="context-stat">
+            <span>Current location</span>
+            <strong>{location.label}</strong>
+            <small>{location.detail}</small>
           </div>
-          <button className="button-primary">💾 Save my area</button>
+
+          <div className="context-stat">
+            <span>Weather</span>
+            <strong>{weather}</strong>
+            <small>Weather source integration is planned next.</small>
+          </div>
+
+          <div className="context-stat">
+            <span>Local time</span>
+            <strong>{formatLocalTime(localTime)}</strong>
+            <small>Used for breakfast, lunch, evening and weekend ranking.</small>
+          </div>
         </div>
       ) : (
         <div className="context-card">
@@ -79,13 +114,63 @@ function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (mode: Mode) => vo
   );
 }
 
-function PicksPanel({ response }: { response: AgentResponse }) {
+function cardMatchesInterest(card: PickCard, interests: string[]) {
+  if (card.category === "weather") return true;
+  if (interests.length === 0) return true;
+
+  const haystack = [card.category, card.title, card.description, ...card.tags].join(" ").toLowerCase();
+  return interests.some((interest) => {
+    const text = interest.toLowerCase();
+    if (text.includes("food") && card.category === "food") return true;
+    if (text.includes("event") && card.category === "event") return true;
+    if (text.includes("deal") && card.category === "deal") return true;
+    if ((text.includes("grocery") || text.includes("groceries")) && card.category === "grocery") return true;
+    return haystack.includes(text.replace("&", "").trim()) || haystack.includes(text.split(" ")[0]);
+  });
+}
+
+function PicksPanel({
+  response,
+  radiusKm,
+  setRadiusKm,
+  interests,
+  setInterests
+}: {
+  response: AgentResponse;
+  radiusKm: number;
+  setRadiusKm: (value: number) => void;
+  interests: string[];
+  setInterests: (value: string[]) => void;
+}) {
+  const allInterests = defaultUserContext.interests;
+  const filteredCards = response.cards
+    .filter((card) => card.distanceKm === undefined || card.distanceKm <= radiusKm)
+    .filter((card) => cardMatchesInterest(card, interests));
+
+  function toggleInterest(interest: string) {
+    setInterests(interests.includes(interest) ? interests.filter((item) => item !== interest) : [...interests, interest]);
+  }
+
   return (
     <section className="picks-card">
       <h2>✨ Today&apos;s Picks</h2>
       <div className="muted">Ranked by GoAround Agent using source-backed data.</div>
+
+      <div className="pick-filter-card">
+        <div className="field-label">Discovery radius <span style={{ float: "right", color: "var(--blue)" }}>{radiusKm.toFixed(1)} km</span></div>
+        <input value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))} type="range" min="0.5" max="3" step="0.1" style={{ width: "100%" }} />
+        <div className="field-label">Interests</div>
+        <div className="pill-row">
+          {allInterests.map((item) => (
+            <button className={`filter-pill ${interests.includes(item) ? "active" : ""}`} key={item} onClick={() => toggleInterest(item)}>
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="pick-list">
-        {response.cards.slice(0, 4).map((card, index) => (
+        {filteredCards.slice(0, 4).map((card, index) => (
           <article className="pick-card" key={card.id}>
             <div className="pick-top">
               <div><span className="tag">{index + 1} · {card.category}</span></div>
@@ -100,29 +185,45 @@ function PicksPanel({ response }: { response: AgentResponse }) {
             {card.whyShown && <div className="trace muted">{card.whyShown}</div>}
           </article>
         ))}
+        {filteredCards.length === 0 && <div className="muted">No picks match the current filters. Try widening the radius or enabling more interests.</div>}
       </div>
     </section>
   );
 }
 
-function UserMode() {
+function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests }: {
+  userContext: UserContext;
+  radiusKm: number;
+  setRadiusKm: (value: number) => void;
+  interests: string[];
+  setInterests: (value: string[]) => void;
+}) {
   const [input, setInput] = useState("");
   const [response, setResponse] = useState<AgentResponse>(mockAgentResponse);
   const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { id: "welcome", role: "assistant", content: welcomeMessage }
+  ]);
 
   async function askAgent(message: string) {
     if (!message.trim()) return;
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: message };
+    setMessages((current) => [...current, userMessage]);
     setLoading(true);
+
     try {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "demo-session", message, context: defaultUserContext })
+        body: JSON.stringify({ sessionId: "demo-session", message, context: userContext })
       });
       const data = (await res.json()) as AgentResponse;
       setResponse(data);
+      setMessages((current) => [...current, { id: data.runId, role: "assistant", content: data.answer }]);
     } catch {
+      const fallback = "I hit a temporary error while calling the agent, so I kept the safe fallback picks visible. Please try again.";
       setResponse(mockAgentResponse);
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: fallback }]);
     } finally {
       setLoading(false);
     }
@@ -130,8 +231,9 @@ function UserMode() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    await askAgent(input);
+    const message = input;
     setInput("");
+    await askAgent(message);
   }
 
   return (
@@ -141,10 +243,25 @@ function UserMode() {
           <h2>💬 Ask GoAround</h2>
           <span className="muted">🛡️ {response.fallbackUsed ? "Safe fallback" : "Live Exa search"}</span>
         </div>
-        <div className="chat-bubble">🤖 <span>{response.answer}</span></div>
-        <div className="robot">🤖</div>
-        <h2 style={{ textAlign: "center" }}>How can I help you today?</h2>
-        <div className="muted" style={{ textAlign: "center" }}>Try one of the ideas below or ask anything.</div>
+
+        <div className="chat-scroll">
+          {messages.map((message) => (
+            <div className={`chat-bubble ${message.role}`} key={message.id}>
+              <span>{message.role === "assistant" ? "🤖" : "👤"}</span>
+              <span>{message.content}</span>
+            </div>
+          ))}
+          {loading && <div className="chat-bubble assistant"><span>🤖</span><span>Searching live sources and ranking local picks…</span></div>}
+        </div>
+
+        {messages.length === 1 && (
+          <>
+            <div className="robot">🤖</div>
+            <h2 style={{ textAlign: "center" }}>How can I help you today?</h2>
+            <div className="muted" style={{ textAlign: "center" }}>Try one of the ideas below or ask anything.</div>
+          </>
+        )}
+
         <div className="quick-prompts">
           {quickPrompts.map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}</button>)}
         </div>
@@ -157,7 +274,7 @@ function UserMode() {
           {response.trace.map((step, index) => <div key={`${step.step}-${index}`}>• {step.step}: {step.detail}</div>)}
         </div>
       </main>
-      <PicksPanel response={response} />
+      <PicksPanel response={response} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} />
     </div>
   );
 }
@@ -203,15 +320,87 @@ function BusinessMode() {
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>("user");
+  const [localTime, setLocalTime] = useState(new Date());
+  const [radiusKm, setRadiusKm] = useState(defaultUserContext.radiusKm);
+  const [interests, setInterests] = useState(defaultUserContext.interests);
+  const [location, setLocation] = useState<LocationState>({
+    status: "detecting",
+    label: "Detecting location…",
+    detail: "Allow browser location access for better local picks.",
+    contextName: defaultUserContext.locationName,
+    lat: defaultUserContext.lat,
+    lon: defaultUserContext.lon
+  });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLocalTime(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setLocation({
+        status: "unsupported",
+        label: defaultUserContext.locationName,
+        detail: "Browser geolocation is not available. Using default demo area.",
+        contextName: defaultUserContext.locationName,
+        lat: defaultUserContext.lat,
+        lon: defaultUserContext.lon
+      });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = Number(position.coords.latitude.toFixed(5));
+        const lon = Number(position.coords.longitude.toFixed(5));
+        setLocation({
+          status: "detected",
+          label: "Current location",
+          detail: `${lat}, ${lon}`,
+          contextName: `near coordinates ${lat}, ${lon} in Singapore`,
+          lat,
+          lon
+        });
+      },
+      () => {
+        setLocation({
+          status: "denied",
+          label: defaultUserContext.locationName,
+          detail: "Location permission was not granted. Using default demo area.",
+          contextName: defaultUserContext.locationName,
+          lat: defaultUserContext.lat,
+          lon: defaultUserContext.lon
+        });
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+    );
+  }, []);
+
+  const userContext = useMemo<UserContext>(() => ({
+    ...defaultUserContext,
+    locationName: location.contextName,
+    lat: location.lat,
+    lon: location.lon,
+    radiusKm,
+    interests,
+    weather: defaultUserContext.weather,
+    timeOfDay: defaultUserContext.timeOfDay
+  }), [interests, location.contextName, location.lat, location.lon, radiusKm]);
+
   return (
     <div className="app-shell">
-      <Sidebar mode={mode} />
+      <Sidebar mode={mode} location={location} localTime={localTime} weather={defaultUserContext.weather ?? "Weather not available"} />
       <section className="content">
         <div className="topbar">
           <ModeToggle mode={mode} setMode={setMode} />
           <div className="muted">❔ SK</div>
         </div>
-        {mode === "user" ? <UserMode /> : <BusinessMode />}
+        {mode === "user" ? (
+          <UserMode userContext={userContext} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} />
+        ) : (
+          <BusinessMode />
+        )}
       </section>
     </div>
   );
