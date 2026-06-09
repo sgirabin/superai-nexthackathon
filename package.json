@@ -13,7 +13,6 @@
   },
   "engines": {
     "node": "20.x",
-    "pnpm": "10.14.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
