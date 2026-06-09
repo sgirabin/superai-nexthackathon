@@ -1,0 +1,20 @@
+{
+  "name": "agentic-goaround-sg",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agentic GoAround SG hackathon MVP monorepo",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "pnpm --filter @goaround/web dev",
+    "build": "pnpm --filter @goaround/agent-core build && pnpm --filter @goaround/web build",
+    "lint": "pnpm --filter @goaround/web lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
