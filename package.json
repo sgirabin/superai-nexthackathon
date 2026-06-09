@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Agentic GoAround SG hackathon MVP monorepo",
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
     "dev": "pnpm --filter @goaround/web dev",
     "build": "pnpm --filter @goaround/agent-core build && pnpm --filter @goaround/web build",
@@ -12,7 +12,8 @@
     "test": "pnpm -r test"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x",
+    "pnpm": "10.14.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
