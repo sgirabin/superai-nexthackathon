@@ -20,12 +20,50 @@ type LocationState = {
   lat?: number;
   lon?: number;
 };
+type WeatherState = {
+  status: "loading" | "live" | "fallback";
+  condition: string;
+  icon: string;
+  area: string;
+  detail: string;
+  sourceName: string;
+  sourceUrl: string;
+};
+
+type Landmark = { name: string; area: string; lat: number; lon: number };
 
 const quickPrompts = [
   "Where can I eat cheap near me?",
   "What's happening this weekend?",
   "Indoor activities for rainy days",
   "Show me grocery deals nearby"
+];
+
+const suggestedInterests = [
+  "Food & Dining",
+  "Events",
+  "Groceries",
+  "Deals",
+  "Kids activities",
+  "Rainy day",
+  "Coffee",
+  "Lunch",
+  "Shopping",
+  "Fitness"
+];
+
+const landmarks: Landmark[] = [
+  { name: "Marina Bay Sands", area: "Marina Bay", lat: 1.2834, lon: 103.8607 },
+  { name: "Chinatown", area: "Chinatown", lat: 1.284, lon: 103.843 },
+  { name: "Tanjong Pagar", area: "Tanjong Pagar", lat: 1.2764, lon: 103.8458 },
+  { name: "Orchard Road", area: "Orchard", lat: 1.3048, lon: 103.8318 },
+  { name: "Bugis", area: "Bugis", lat: 1.3008, lon: 103.8551 },
+  { name: "Little India", area: "Little India", lat: 1.3067, lon: 103.8493 },
+  { name: "Sengkang", area: "Sengkang", lat: 1.3917, lon: 103.895 },
+  { name: "Punggol", area: "Punggol", lat: 1.3984, lon: 103.9072 },
+  { name: "Jurong East", area: "Jurong East", lat: 1.3331, lon: 103.7423 },
+  { name: "Woodlands", area: "Woodlands", lat: 1.436, lon: 103.786 },
+  { name: "Tampines", area: "Tampines", lat: 1.3521, lon: 103.9447 }
 ];
 
 const welcomeMessage =
@@ -45,6 +83,44 @@ function CategoryIcon({ category }: { category: PickCard["category"] }) {
   return <span style={{ fontSize: 42 }}>{iconMap[category] ?? "📍"}</span>;
 }
 
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const radius = 6371;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function inferPlaceName(lat: number, lon: number) {
+  const nearest = landmarks
+    .map((landmark) => ({ ...landmark, distance: distanceKm(lat, lon, landmark.lat, landmark.lon) }))
+    .sort((a, b) => a.distance - b.distance)[0];
+
+  if (!nearest) return { label: "Current location", detail: `${lat}, ${lon}`, contextName: `near coordinates ${lat}, ${lon} in Singapore` };
+  if (nearest.distance <= 0.9) {
+    return {
+      label: nearest.name,
+      detail: `Current location · about ${nearest.distance.toFixed(1)} km from ${nearest.area}`,
+      contextName: nearest.area
+    };
+  }
+  if (nearest.distance <= 3.5) {
+    return {
+      label: `Near ${nearest.name}`,
+      detail: `Current location · about ${nearest.distance.toFixed(1)} km away`,
+      contextName: nearest.area
+    };
+  }
+  return {
+    label: "Current location",
+    detail: `${lat}, ${lon} · nearest known area: ${nearest.area}`,
+    contextName: `near ${nearest.area}`
+  };
+}
+
 function formatLocalTime(date: Date) {
   return new Intl.DateTimeFormat(undefined, {
     weekday: "short",
@@ -54,7 +130,15 @@ function formatLocalTime(date: Date) {
   }).format(date);
 }
 
-function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location: LocationState; localTime: Date; weather: string }) {
+function inferTimeUse(date: Date) {
+  const hour = date.getHours();
+  if (hour < 11) return "Morning context: better for breakfast, coffee, commute and early activities.";
+  if (hour < 15) return "Lunch context: better for food, cafes and quick nearby errands.";
+  if (hour < 19) return "Afternoon context: better for errands, shopping, kids activities and events.";
+  return "Evening context: better for dinner, groceries, events and indoor options.";
+}
+
+function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location: LocationState; localTime: Date; weather: WeatherState }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -81,16 +165,19 @@ function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location:
             <small>{location.detail}</small>
           </div>
 
-          <div className="context-stat">
-            <span>Weather</span>
-            <strong>{weather}</strong>
-            <small>Weather source integration is planned next.</small>
+          <div className="context-stat weather-stat">
+            <div className="weather-icon">{weather.icon}</div>
+            <div>
+              <span>Weather</span>
+              <strong>{weather.status === "loading" ? "Checking weather…" : `${weather.condition} near ${weather.area}`}</strong>
+              <small>{weather.detail}</small>
+            </div>
           </div>
 
           <div className="context-stat">
             <span>Local time</span>
             <strong>{formatLocalTime(localTime)}</strong>
-            <small>Used for breakfast, lunch, evening and weekend ranking.</small>
+            <small>{inferTimeUse(localTime)}</small>
           </div>
         </div>
       ) : (
@@ -142,7 +229,12 @@ function PicksPanel({
   interests: string[];
   setInterests: (value: string[]) => void;
 }) {
-  const allInterests = defaultUserContext.interests;
+  const [interestInput, setInterestInput] = useState("");
+  const allInterests = Array.from(new Set([...suggestedInterests, ...interests]));
+  const suggestions = suggestedInterests
+    .filter((item) => !interests.includes(item))
+    .filter((item) => item.toLowerCase().includes(interestInput.toLowerCase()))
+    .slice(0, 4);
   const filteredCards = response.cards
     .filter((card) => card.distanceKm === undefined || card.distanceKm <= radiusKm)
     .filter((card) => cardMatchesInterest(card, interests));
@@ -151,26 +243,44 @@ function PicksPanel({
     setInterests(interests.includes(interest) ? interests.filter((item) => item !== interest) : [...interests, interest]);
   }
 
-  return (
-    <section className="picks-card">
-      <h2>✨ Today&apos;s Picks</h2>
-      <div className="muted">Ranked by GoAround Agent using source-backed data.</div>
+  function addInterest(interest: string) {
+    const clean = interest.trim();
+    if (!clean) return;
+    if (!interests.includes(clean)) setInterests([...interests, clean]);
+    setInterestInput("");
+  }
 
-      <div className="pick-filter-card">
-        <div className="field-label">Discovery radius <span style={{ float: "right", color: "var(--blue)" }}>{radiusKm.toFixed(1)} km</span></div>
-        <input value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))} type="range" min="0.5" max="3" step="0.1" style={{ width: "100%" }} />
-        <div className="field-label">Interests</div>
-        <div className="pill-row">
-          {allInterests.map((item) => (
-            <button className={`filter-pill ${interests.includes(item) ? "active" : ""}`} key={item} onClick={() => toggleInterest(item)}>
-              {item}
-            </button>
-          ))}
+  return (
+    <section className="picks-card fixed-panel">
+      <div className="fixed-panel-header">
+        <h2>✨ Today&apos;s Picks</h2>
+        <div className="muted">Ranked by GoAround Agent using source-backed data.</div>
+
+        <div className="pick-filter-card">
+          <div className="field-label">Discovery radius <span style={{ float: "right", color: "var(--blue)" }}>{radiusKm.toFixed(1)} km</span></div>
+          <input value={radiusKm} onChange={(event) => setRadiusKm(Number(event.target.value))} type="range" min="0.5" max="3" step="0.1" style={{ width: "100%" }} />
+          <div className="field-label">Interests</div>
+          <div className="pill-row compact">
+            {allInterests.map((item) => (
+              <button className={`filter-pill ${interests.includes(item) ? "active" : ""}`} key={item} onClick={() => toggleInterest(item)}>
+                {item}{interests.includes(item) ? " ×" : ""}
+              </button>
+            ))}
+          </div>
+          <div className="interest-input-row">
+            <input value={interestInput} onChange={(event) => setInterestInput(event.target.value)} placeholder="Add interest, e.g. dessert" />
+            <button onClick={() => addInterest(interestInput)}>Add</button>
+          </div>
+          {interestInput && suggestions.length > 0 && (
+            <div className="suggestion-row">
+              {suggestions.map((item) => <button key={item} onClick={() => addInterest(item)}>{item}</button>)}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="pick-list">
-        {filteredCards.slice(0, 4).map((card, index) => (
+      <div className="pick-list scroll-list">
+        {filteredCards.map((card, index) => (
           <article className="pick-card" key={card.id}>
             <div className="pick-top">
               <div><span className="tag">{index + 1} · {card.category}</span></div>
@@ -237,14 +347,14 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
   }
 
   return (
-    <div className="user-grid">
-      <main className="main-card chat-hero">
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
+    <div className="user-grid fixed-user-grid">
+      <main className="main-card chat-hero fixed-panel">
+        <div className="fixed-panel-header" style={{ display: "flex", justifyContent: "space-between" }}>
           <h2>💬 Ask GoAround</h2>
           <span className="muted">🛡️ {response.fallbackUsed ? "Safe fallback" : "Live Exa search"}</span>
         </div>
 
-        <div className="chat-scroll">
+        <div className="chat-scroll flexible-scroll">
           {messages.map((message) => (
             <div className={`chat-bubble ${message.role}`} key={message.id}>
               <span>{message.role === "assistant" ? "🤖" : "👤"}</span>
@@ -252,15 +362,14 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
             </div>
           ))}
           {loading && <div className="chat-bubble assistant"><span>🤖</span><span>Searching live sources and ranking local picks…</span></div>}
+          {messages.length === 1 && (
+            <div className="empty-chat-hint">
+              <div className="robot">🤖</div>
+              <h2>How can I help you today?</h2>
+              <div className="muted">Try one of the ideas below or ask anything.</div>
+            </div>
+          )}
         </div>
-
-        {messages.length === 1 && (
-          <>
-            <div className="robot">🤖</div>
-            <h2 style={{ textAlign: "center" }}>How can I help you today?</h2>
-            <div className="muted" style={{ textAlign: "center" }}>Try one of the ideas below or ask anything.</div>
-          </>
-        )}
 
         <div className="quick-prompts">
           {quickPrompts.map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}</button>)}
@@ -269,7 +378,7 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
           <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask GoAround about this area..." />
           <button className="send-button" disabled={loading}>{loading ? "…" : "➤"}</button>
         </form>
-        <div className="trace muted">
+        <div className="trace muted compact-trace">
           <strong>Agent trace</strong>
           {response.trace.map((step, index) => <div key={`${step.step}-${index}`}>• {step.step}: {step.detail}</div>)}
         </div>
@@ -323,6 +432,15 @@ export default function Home() {
   const [localTime, setLocalTime] = useState(new Date());
   const [radiusKm, setRadiusKm] = useState(defaultUserContext.radiusKm);
   const [interests, setInterests] = useState(defaultUserContext.interests);
+  const [weather, setWeather] = useState<WeatherState>({
+    status: "loading",
+    condition: "Checking weather…",
+    icon: "🌦️",
+    area: defaultUserContext.locationName,
+    detail: "Fetching live Singapore weather forecast.",
+    sourceName: "data.gov.sg 2-hour weather forecast",
+    sourceUrl: "https://data.gov.sg/"
+  });
   const [location, setLocation] = useState<LocationState>({
     status: "detecting",
     label: "Detecting location…",
@@ -354,11 +472,12 @@ export default function Home() {
       (position) => {
         const lat = Number(position.coords.latitude.toFixed(5));
         const lon = Number(position.coords.longitude.toFixed(5));
+        const inferred = inferPlaceName(lat, lon);
         setLocation({
           status: "detected",
-          label: "Current location",
-          detail: `${lat}, ${lon}`,
-          contextName: `near coordinates ${lat}, ${lon} in Singapore`,
+          label: inferred.label,
+          detail: inferred.detail,
+          contextName: inferred.contextName,
           lat,
           lon
         });
@@ -377,6 +496,54 @@ export default function Home() {
     );
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchWeather() {
+      try {
+        const params = new URLSearchParams();
+        if (location.lat !== undefined) params.set("lat", String(location.lat));
+        if (location.lon !== undefined) params.set("lon", String(location.lon));
+        const response = await fetch(`/api/weather?${params.toString()}`);
+        const data = (await response.json()) as {
+          condition: string;
+          icon: string;
+          area: string;
+          detail: string;
+          sourceName: string;
+          sourceUrl: string;
+          fallbackUsed: boolean;
+        };
+        if (cancelled) return;
+        setWeather({
+          status: data.fallbackUsed ? "fallback" : "live",
+          condition: data.condition,
+          icon: data.icon,
+          area: data.area,
+          detail: data.detail,
+          sourceName: data.sourceName,
+          sourceUrl: data.sourceUrl
+        });
+      } catch {
+        if (cancelled) return;
+        setWeather({
+          status: "fallback",
+          condition: "Partly cloudy",
+          icon: "⛅",
+          area: location.contextName,
+          detail: "Weather temporarily unavailable. Using safe fallback context.",
+          sourceName: "Fallback weather context",
+          sourceUrl: "https://www.weather.gov.sg/"
+        });
+      }
+    }
+
+    fetchWeather();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.contextName, location.lat, location.lon]);
+
   const userContext = useMemo<UserContext>(() => ({
     ...defaultUserContext,
     locationName: location.contextName,
@@ -384,13 +551,13 @@ export default function Home() {
     lon: location.lon,
     radiusKm,
     interests,
-    weather: defaultUserContext.weather,
+    weather: weather.condition,
     timeOfDay: defaultUserContext.timeOfDay
-  }), [interests, location.contextName, location.lat, location.lon, radiusKm]);
+  }), [interests, location.contextName, location.lat, location.lon, radiusKm, weather.condition]);
 
   return (
     <div className="app-shell">
-      <Sidebar mode={mode} location={location} localTime={localTime} weather={defaultUserContext.weather ?? "Weather not available"} />
+      <Sidebar mode={mode} location={location} localTime={localTime} weather={weather} />
       <section className="content">
         <div className="topbar">
           <ModeToggle mode={mode} setMode={setMode} />
