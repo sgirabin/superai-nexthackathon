@@ -1,6 +1,9 @@
+<<<<<<< HEAD
 # superai-nexthackathon
 [SuperAI] Next Hackathon 
 =======
+=======
+>>>>>>> origin/feature/agentic-goaround-mvp
 # Agentic GoAround SG
 
 Agentic GoAround SG is a hackathon MVP for an autonomous local discovery and merchant promotion agent.
