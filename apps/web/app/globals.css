@@ -136,6 +136,23 @@ select {
   font-size: 14px;
 }
 
+.weather-stat {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.weather-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #eef7ff;
+  font-size: 22px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -172,6 +189,11 @@ select {
   margin-top: 12px;
 }
 
+.pill-row.compact {
+  max-height: 84px;
+  overflow: auto;
+}
+
 .pill {
   border-radius: 999px;
   padding: 7px 11px;
@@ -198,6 +220,38 @@ select {
   color: #175cd3;
 }
 
+.interest-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.interest-input-row input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.interest-input-row button,
+.suggestion-row button {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  color: var(--blue);
+  font-weight: 900;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .button-primary {
   width: 100%;
   border: 0;
@@ -213,6 +267,7 @@ select {
 
 .content {
   padding: 28px;
+  min-width: 0;
 }
 
 .topbar {
@@ -250,10 +305,26 @@ select {
   gap: 22px;
 }
 
+.fixed-user-grid {
+  height: calc(100vh - 106px);
+  min-height: 640px;
+}
+
 .main-card,
 .picks-card,
 .business-card {
   padding: 24px;
+}
+
+.fixed-panel {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.fixed-panel-header {
+  flex: 0 0 auto;
 }
 
 .chat-hero {
@@ -266,9 +337,18 @@ select {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 260px;
   overflow: auto;
   padding-right: 6px;
+}
+
+.flexible-scroll {
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+.empty-chat-hint {
+  margin: auto;
+  text-align: center;
 }
 
 .chat-bubble {
@@ -292,7 +372,7 @@ select {
 }
 
 .robot {
-  margin: 56px auto 16px;
+  margin: 0 auto 16px;
   width: 180px;
   height: 150px;
   border-radius: 42px;
@@ -305,7 +385,8 @@ select {
 }
 
 .quick-prompts {
-  margin-top: auto;
+  flex: 0 0 auto;
+  margin-top: 14px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
@@ -322,6 +403,7 @@ select {
 }
 
 .chat-form {
+  flex: 0 0 auto;
   display: flex;
   gap: 10px;
   padding: 10px;
@@ -361,6 +443,13 @@ select {
   display: grid;
   gap: 14px;
   margin-top: 18px;
+}
+
+.scroll-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
 }
 
 .pick-card {
@@ -420,6 +509,12 @@ select {
   margin-top: 6px;
 }
 
+.compact-trace {
+  flex: 0 0 auto;
+  max-height: 92px;
+  overflow: auto;
+}
+
 .business-grid {
   display: grid;
   grid-template-columns: 1fr 360px;
@@ -461,6 +556,12 @@ select {
   .user-grid,
   .business-grid {
     grid-template-columns: 1fr;
+  }
+  .fixed-user-grid {
+    height: auto;
+  }
+  .fixed-panel {
+    height: auto;
   }
   .quick-prompts {
     grid-template-columns: 1fr 1fr;
