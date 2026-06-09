@@ -1,5 +1,5 @@
 import type { PickCard, SearchToolInput, SearchToolResult } from "../types";
-import { mockPickCards } from "../mock-data";
+import { buildFallbackPickCards } from "../mock-data";
 
 type ExaResult = {
   id?: string;
@@ -64,10 +64,11 @@ function toPickCard(result: ExaResult, input: SearchToolInput, index: number): P
 export async function searchWithExa(input: SearchToolInput): Promise<SearchToolResult> {
   const apiKey = process.env.EXA_API_KEY;
   const baseUrl = process.env.EXA_API_BASE_URL ?? "https://api.exa.ai";
+  const fallbackCards = buildFallbackPickCards(input.context);
 
   if (!apiKey) {
     return {
-      cards: mockPickCards,
+      cards: fallbackCards,
       fallbackUsed: true,
       raw: { reason: "EXA_API_KEY is not configured" }
     };
@@ -100,7 +101,7 @@ export async function searchWithExa(input: SearchToolInput): Promise<SearchToolR
 
     if (cards.length === 0) {
       return {
-        cards: mockPickCards,
+        cards: fallbackCards,
         fallbackUsed: true,
         raw: { reason: "Exa returned no results", data }
       };
@@ -113,7 +114,7 @@ export async function searchWithExa(input: SearchToolInput): Promise<SearchToolR
     };
   } catch (error) {
     return {
-      cards: mockPickCards,
+      cards: fallbackCards,
       fallbackUsed: true,
       raw: { reason: error instanceof Error ? error.message : "Unknown Exa error" }
     };
