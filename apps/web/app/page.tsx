@@ -13,23 +13,8 @@ import {
 
 type Mode = "user" | "business";
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string; cards?: PickCard[] };
-type LocationState = {
-  status: "detecting" | "detected" | "fallback" | "denied" | "unsupported";
-  label: string;
-  detail: string;
-  contextName: string;
-  lat?: number;
-  lon?: number;
-};
-type WeatherState = {
-  status: "loading" | "live" | "fallback";
-  condition: string;
-  icon: string;
-  area: string;
-  detail: string;
-  sourceName: string;
-  sourceUrl: string;
-};
+type LocationState = { status: "detecting" | "detected" | "fallback" | "denied" | "unsupported"; label: string; detail: string; contextName: string; lat?: number; lon?: number };
+type WeatherState = { status: "loading" | "live" | "fallback"; condition: string; icon: string; area: string; detail: string; sourceName: string; sourceUrl: string };
 type Landmark = { name: string; area: string; lat: number; lon: number };
 
 const defaultPersona = "male 30s, foodie, likes to chill, value-conscious, prefers practical nearby options";
@@ -49,8 +34,7 @@ const landmarks: Landmark[] = [
   { name: "Tampines", area: "Tampines", lat: 1.3521, lon: 103.9447 }
 ];
 
-const welcomeMessage =
-  "Hi, I’m Ask GoAround — your local decision engine. Tell me what you’re deciding, what matters most, or what constraints you have, and I’ll compare live signals, rank the trade-offs, and recommend the next best move around your area.";
+const welcomeMessage = "Hi, I’m Ask GoAround — your local decision engine. Tell me what you’re deciding, what matters most, or what constraints you have, and I’ll compare live signals, rank the trade-offs, and recommend the next best move around your area.";
 
 const loadingSteps = [
   { label: "Classifying intent", tool: "orchestrator" },
@@ -58,7 +42,7 @@ const loadingSteps = [
   { label: "Searching live sources", tool: "exa" },
   { label: "Re-ranking candidates", tool: "ranking" },
   { label: "Writing explanation", tool: "ai-gateway" },
-  { label: "Logging run", tool: "storage" }
+  { label: "Returning decision", tool: "storage" }
 ];
 
 function inferFoodIcon(card: PickCard): string {
@@ -130,10 +114,10 @@ function buildContextualPrompts(context: UserContext, localTime: Date, weather: 
     `Build a short plan around ${area} using live sources`
   ];
 
-  if (isRainy) return [`What should I do near ${area} if it may rain?`, `Find indoor food and chill options near ${area}`, ...base.slice(1, 3)];
-  if (hour >= 17) return [`Find me a chill dinner or bar near ${area} with good value`, `Where can I get a pint of beer under $15 near ${area}?`, ...base.slice(0, 2)];
-  if (hour >= 11 && hour < 15) return [`Pick the best lunch near ${area} under $15`, `Compare quick lunch options near ${area}`, ...base.slice(0, 2)];
-  return [`Find coffee or breakfast near ${area}`, `What is worth doing near ${area} this morning?`, ...base.slice(0, 2)];
+  if (isRainy) return [`What should I do near ${area} if it may rain?`, `Find indoor food and chill options near ${area}`, ...base.slice(1, 3)].slice(0, 4);
+  if (hour >= 17) return [`Find me a chill dinner or bar near ${area} with good value`, `Where can I get a pint of beer under $15 near ${area}?`, ...base.slice(0, 2)].slice(0, 4);
+  if (hour >= 11 && hour < 15) return [`Pick the best lunch near ${area} under $15`, `Compare quick lunch options near ${area}`, ...base.slice(0, 2)].slice(0, 4);
+  return [`Find coffee or breakfast near ${area}`, `What is worth doing near ${area} this morning?`, ...base.slice(0, 2)].slice(0, 4);
 }
 
 function buildLocalResponse(context: UserContext): AgentResponse {
@@ -161,6 +145,16 @@ function metadataList(card: PickCard, key: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function cardSignalCount(card: PickCard): number {
+  return metadataList(card, "priceSignals").length + metadataList(card, "addressSignals").length + metadataList(card, "openingSignals").length;
+}
+
+function visibleResultLimit(cards: PickCard[]): number {
+  if (cards.length <= 3) return cards.length;
+  const strongCards = cards.filter((card, index) => index < 3 || (card.score ?? 0) >= 0.75 || cardSignalCount(card) > 0).length;
+  return Math.min(5, Math.max(3, strongCards));
+}
+
 function PracticalSignals({ card }: { card: PickCard }) {
   const signals = [
     ...metadataList(card, "priceSignals").map((item) => `💵 ${item}`),
@@ -175,10 +169,8 @@ function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location:
   return (
     <aside className="sidebar">
       <div className="brand"><div className="logo-pin">G</div><div><div className="brand-title">GoAround <span>SG</span></div><div className="brand-subtitle">AI local decision engine for Singapore</div></div></div>
-      <div className="nav-item active">🏠 {mode === "user" ? "GoAround Today" : "Dashboard"}</div>
-      <div className="nav-item">🧭 {mode === "user" ? "Decision Helper" : "Create Promotion"}</div>
-      <div className="nav-item">🔖 {mode === "user" ? "Saved Decisions" : "Campaigns"}</div>
-      <div className="nav-item">ℹ️ How Agent Works</div>
+      <div className="nav-item active">🏠 {mode === "user" ? "GoAround Today" : "Business Demo"}</div>
+      {mode === "user" && <div className="nav-item">🤖 Agent trace shown below</div>}
       {mode === "user" ? (
         <div className="context-card">
           <h3>📍 My decision context</h3>
@@ -222,9 +214,10 @@ function FormattedAssistantMessage({ content }: { content: string }) {
 
 function ResultCarousel({ cards }: { cards: PickCard[] }) {
   if (cards.length === 0) return null;
+  const visibleCards = cards.slice(0, visibleResultLimit(cards));
   return (
     <div className="chat-card-carousel">
-      {cards.slice(0, 3).map((card, index) => (
+      {visibleCards.map((card, index) => (
         <article className="chat-result-card" key={card.id}>
           <div className="chat-result-top"><span className="tag">#{index + 1} · {card.category}</span><CategoryIcon card={card} /></div>
           <strong>{card.title}</strong>
@@ -233,12 +226,19 @@ function ResultCarousel({ cards }: { cards: PickCard[] }) {
           <div className="chat-result-footer"><span>{card.distanceKm ? `📍 ${card.distanceKm} km` : "Source-backed"}</span><a href={card.sourceUrl} target="_blank">Source ↗</a></div>
         </article>
       ))}
+      {cards.length > visibleCards.length && <div className="muted">Showing top {visibleCards.length} of {cards.length} ranked sources.</div>}
     </div>
   );
 }
 
 function LoadingAgentSteps() {
-  return <div className="agent-progress"><div className="agent-progress-title"><span>🤖</span><strong>Agent runtime working</strong></div><div className="agent-progress-steps">{loadingSteps.map((step, index) => <div className="agent-progress-step" key={step.label}><span>{index + 1}</span><div><strong>{step.label}</strong><small>{step.tool}</small></div></div>)}</div></div>;
+  const [activeIndex, setActiveIndex] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setActiveIndex((index) => Math.min(index + 1, loadingSteps.length - 1)), 850);
+    return () => window.clearInterval(timer);
+  }, []);
+  const active = loadingSteps[activeIndex];
+  return <div className="agent-progress"><div className="agent-progress-title"><span>🤖</span><strong>Agent runtime working</strong></div><div className="agent-progress-steps"><div className="agent-progress-step"><span>{activeIndex + 1}</span><div><strong>{active.label}</strong><small>{active.tool} · step {activeIndex + 1} of {loadingSteps.length}</small></div></div></div></div>;
 }
 
 function PicksPanel({ response, radiusKm, setRadiusKm, interests, setInterests }: { response: AgentResponse; radiusKm: number; setRadiusKm: (value: number) => void; interests: string[]; setInterests: (value: string[]) => void }) {
@@ -326,5 +326,5 @@ export default function Home() {
 
   const userContext = useMemo<UserContext>(() => ({ ...defaultUserContext, locationName: location.contextName, lat: location.lat, lon: location.lon, radiusKm, interests, weather: weather.condition, timeOfDay: inferTimeLabel(localTime) }), [interests, localTime, location.contextName, location.lat, location.lon, radiusKm, weather.condition]);
 
-  return <div className="app-shell"><Sidebar mode={mode} location={location} localTime={localTime} weather={weather} /><section className="content"><div className="topbar"><ModeToggle mode={mode} setMode={setMode} /><div className="muted">❔ SK</div></div>{mode === "user" ? <UserMode userContext={userContext} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} localTime={localTime} weather={weather} /> : <BusinessMode />}</section></div>;
+  return <div className="app-shell"><Sidebar mode={mode} location={location} localTime={localTime} weather={weather} /><section className="content"><div className="topbar"><ModeToggle mode={mode} setMode={setMode} /><div className="muted">❔ SK</div></div><div style={{ display: mode === "user" ? "block" : "none" }}><UserMode userContext={userContext} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} localTime={localTime} weather={weather} /></div><div style={{ display: mode === "business" ? "block" : "none" }}><BusinessMode /></div></section></div>;
 }
