@@ -5,9 +5,9 @@ set -euo pipefail
 # Requirements: AWS CLI v2 configured (credentials in env or ~/.aws/), jq optional
 # Usage: ./scripts/setup-aws-worker.sh
 
-ROLE_NAME="career-kaki-lambda-role"
-FUNCTION_NAME="career-kaki-worker"
-API_NAME="career-kaki-http-api"
+ROLE_NAME="goaround-lambda-role"
+FUNCTION_NAME="goaround-worker"
+API_NAME="goaround-http-api"
 STAGE_NAME='$default'
 REGION=${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

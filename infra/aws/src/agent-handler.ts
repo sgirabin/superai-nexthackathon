@@ -20,7 +20,11 @@ type ApiResponse = {
   body: string;
 };
 
-const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: {
+    removeUndefinedValues: true
+  }
+});
 
 const corsHeaders = {
   "content-type": "application/json",
@@ -46,82 +50,6 @@ function authorize(event: ApiGatewayEvent): boolean {
   const expected = process.env.AGENT_API_KEY;
   if (!expected) return true;
   return getHeader(event.headers, "x-api-key") === expected;
-}
-
-async function explainWithAiGateway(request: AgentRequest, response: AgentResponse): Promise<AgentResponse> {
-  const apiKey = process.env.VERCEL_AI_GATEWAY_API_KEY;
-  if (!apiKey) {
-    response.trace.push({
-      step: "Generate model explanation",
-      status: "skipped",
-      detail: "VERCEL_AI_GATEWAY_API_KEY is not configured.",
-      tool: "ai-gateway",
-      startedAt: new Date().toISOString(),
-      completedAt: new Date().toISOString()
-    });
-    return response;
-  }
-
-  const startedAt = new Date().toISOString();
-  try {
-    const aiResponse = await fetch(`${process.env.VERCEL_AI_GATEWAY_BASE_URL ?? "https://ai-gateway.vercel.sh/v1"}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: process.env.VERCEL_AI_GATEWAY_MODEL ?? "openai/gpt-5.4",
-        messages: [
-          {
-            role: "system",
-            content: "Write a concise local recommendation explanation. Mention that source links should be checked for prices, hours, and availability."
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              userMessage: request.message,
-              locationName: request.context.locationName,
-              cards: response.cards.map((card) => ({
-                title: card.title,
-                description: card.description,
-                sourceName: card.sourceName,
-                category: card.category
-              }))
-            })
-          }
-        ],
-        temperature: 0.2
-      })
-    });
-
-    if (!aiResponse.ok) {
-      throw new Error(`Vercel AI Gateway returned HTTP ${aiResponse.status}`);
-    }
-
-    const payload = (await aiResponse.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const answer = payload.choices?.[0]?.message?.content?.trim();
-    response.trace.push({
-      step: "Generate model explanation",
-      status: answer ? "success" : "failed",
-      detail: answer ? "Vercel AI Gateway generated the final explanation." : "Vercel AI Gateway returned no explanation content.",
-      tool: "ai-gateway",
-      startedAt,
-      completedAt: new Date().toISOString()
-    });
-
-    return answer ? { ...response, answer } : response;
-  } catch (error) {
-    response.trace.push({
-      step: "Generate model explanation",
-      status: "failed",
-      detail: error instanceof Error ? error.message : "Unknown Vercel AI Gateway error.",
-      tool: "ai-gateway",
-      startedAt,
-      completedAt: new Date().toISOString()
-    });
-    return response;
-  }
 }
 
 async function logRun(request: AgentRequest, response: AgentResponse, event: ApiGatewayEvent): Promise<AgentResponse> {
@@ -188,8 +116,7 @@ export async function handler(event: ApiGatewayEvent): Promise<ApiResponse> {
     };
 
     const localResponse = await runAgent(request);
-    const explainedResponse = await explainWithAiGateway(request, localResponse);
-    const loggedResponse = await logRun(request, explainedResponse, event);
+    const loggedResponse = await logRun(request, localResponse, event);
 
     return json(200, loggedResponse);
   } catch (error) {

@@ -10,7 +10,7 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.699.0",
     "@aws-sdk/lib-dynamodb": "^3.699.0",
-    "@goaround/agent-core": "file:../../packages/agent-core"
+    "@goaround/agent-core": "file:.sam-local-packages/agent-core"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",
