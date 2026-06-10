@@ -35,6 +35,7 @@ const landmarks: Landmark[] = [
 ];
 
 const welcomeMessage = "Hi, I’m Ask GoAround — your local decision engine. Tell me what you’re deciding, what matters most, or what constraints you have, and I’ll compare live signals, rank the trade-offs, and recommend the next best move around your area.";
+const initialLocalTime = new Date("2026-06-10T12:00:00+08:00");
 
 const loadingSteps = [
   { label: "Classifying intent", tool: "orchestrator" },
@@ -83,7 +84,7 @@ function inferPlaceName(lat: number, lon: number) {
 }
 
 function formatLocalTime(date: Date) {
-  return new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(date);
+  return new Intl.DateTimeFormat("en-SG", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short", timeZone: "Asia/Singapore" }).format(date);
 }
 
 function inferTimeUse(date: Date) {
@@ -165,7 +166,7 @@ function PracticalSignals({ card }: { card: PickCard }) {
   return <div className="trace muted">{signals.map((signal) => <div key={signal}>{signal}</div>)}</div>;
 }
 
-function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location: LocationState; localTime: Date; weather: WeatherState }) {
+function Sidebar({ mode, location, localTime, timeReady, weather }: { mode: Mode; location: LocationState; localTime: Date; timeReady: boolean; weather: WeatherState }) {
   return (
     <aside className="sidebar">
       <div className="brand"><div className="logo-pin">G</div><div><div className="brand-title">GoAround <span>SG</span></div><div className="brand-subtitle">AI local decision engine for Singapore</div></div></div>
@@ -177,7 +178,7 @@ function Sidebar({ mode, location, localTime, weather }: { mode: Mode; location:
           <div className="muted">Persona: {defaultPersona}. GoAround uses this context to rank nearby options.</div>
           <div className="context-stat"><span>Current location</span><strong>{location.label}</strong><small>{location.detail}</small></div>
           <div className="context-stat weather-stat"><div className="weather-icon">{weather.icon}</div><div><span>Weather</span><strong>{weather.status === "loading" ? "Checking weather…" : `${weather.condition} near ${weather.area}`}</strong><small>{weather.detail}</small></div></div>
-          <div className="context-stat"><span>Local time</span><strong>{formatLocalTime(localTime)}</strong><small>{inferTimeUse(localTime)}</small></div>
+          <div className="context-stat"><span>Local time</span><strong>{timeReady ? formatLocalTime(localTime) : "Syncing local time..."}</strong><small>{timeReady ? inferTimeUse(localTime) : "Local decision context will update after the app loads."}</small></div>
         </div>
       ) : (
         <div className="context-card"><h3>🏪 Business profile</h3><p><strong>Ah Boyz Chicken Rice</strong></p><div className="muted">Hawker · Sengkang<br />Verified merchant</div><button className="button-primary">View public profile</button></div>
@@ -331,13 +332,19 @@ function BusinessMode() {
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>("user");
-  const [localTime, setLocalTime] = useState(new Date());
+  const [timeReady, setTimeReady] = useState(false);
+  const [localTime, setLocalTime] = useState(initialLocalTime);
   const [radiusKm, setRadiusKm] = useState(defaultUserContext.radiusKm);
   const [interests, setInterests] = useState(defaultUserContext.interests);
   const [weather, setWeather] = useState<WeatherState>({ status: "loading", condition: "Checking weather…", icon: "🌦️", area: defaultUserContext.locationName, detail: "Fetching live Singapore weather forecast.", sourceName: "data.gov.sg 2-hour weather forecast", sourceUrl: "https://data.gov.sg/" });
   const [location, setLocation] = useState<LocationState>({ status: "detecting", label: "Detecting location…", detail: "Allow browser location access for better local picks.", contextName: defaultUserContext.locationName, lat: defaultUserContext.lat, lon: defaultUserContext.lon });
 
-  useEffect(() => { const timer = window.setInterval(() => setLocalTime(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    setTimeReady(true);
+    setLocalTime(new Date());
+    const timer = window.setInterval(() => setLocalTime(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     if (!("geolocation" in navigator)) { setLocation({ status: "unsupported", label: defaultUserContext.locationName, detail: "Browser geolocation is not available. Using default demo area.", contextName: defaultUserContext.locationName, lat: defaultUserContext.lat, lon: defaultUserContext.lon }); return; }
     navigator.geolocation.getCurrentPosition((position) => { const lat = Number(position.coords.latitude.toFixed(5)); const lon = Number(position.coords.longitude.toFixed(5)); const inferred = inferPlaceName(lat, lon); setLocation({ status: "detected", label: inferred.label, detail: inferred.detail, contextName: inferred.contextName, lat, lon }); }, () => setLocation({ status: "denied", label: defaultUserContext.locationName, detail: "Location permission was not granted. Using default demo area.", contextName: defaultUserContext.locationName, lat: defaultUserContext.lat, lon: defaultUserContext.lon }), { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
@@ -359,5 +366,5 @@ export default function Home() {
 
   const userContext = useMemo<UserContext>(() => ({ ...defaultUserContext, locationName: location.contextName, lat: location.lat, lon: location.lon, radiusKm, interests, weather: weather.condition, timeOfDay: inferTimeLabel(localTime) }), [interests, localTime, location.contextName, location.lat, location.lon, radiusKm, weather.condition]);
 
-  return <div className="app-shell"><Sidebar mode={mode} location={location} localTime={localTime} weather={weather} /><section className="content"><div className="topbar"><ModeToggle mode={mode} setMode={setMode} /><div className="muted">❔ SK</div></div><div style={{ display: mode === "user" ? "block" : "none" }}><UserMode userContext={userContext} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} localTime={localTime} weather={weather} /></div><div style={{ display: mode === "business" ? "block" : "none" }}><BusinessMode /></div></section></div>;
+  return <div className="app-shell"><Sidebar mode={mode} location={location} localTime={localTime} timeReady={timeReady} weather={weather} /><section className="content"><div className="topbar"><ModeToggle mode={mode} setMode={setMode} /><div className="muted">❔ SK</div></div><div style={{ display: mode === "user" ? "block" : "none" }}><UserMode userContext={userContext} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} localTime={localTime} weather={weather} /></div><div style={{ display: mode === "business" ? "block" : "none" }}><BusinessMode /></div></section></div>;
 }
