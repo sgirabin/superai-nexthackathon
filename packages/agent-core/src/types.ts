@@ -72,6 +72,7 @@ export type AgentRequest = {
     role: "user" | "assistant";
     content: string;
   }>;
+  previousCards?: PickCard[];
 };
 
 export type AgentResponse = {
