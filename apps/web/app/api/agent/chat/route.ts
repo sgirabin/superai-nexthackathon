@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
     const agentRequest: AgentRequest = {
       sessionId: body.sessionId ?? "web-session-demo",
       message: body.message ?? "",
-      context: body.context ?? defaultUserContext
+      context: body.context ?? defaultUserContext,
+      conversationHistory: body.conversationHistory
     };
 
     if (process.env.NEXT_PUBLIC_AGENT_API_MODE === "aws") {

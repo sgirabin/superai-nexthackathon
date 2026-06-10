@@ -68,6 +68,10 @@ export type AgentRequest = {
   sessionId: string;
   message: string;
   context: UserContext;
+  conversationHistory?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
 };
 
 export type AgentResponse = {
@@ -77,6 +81,7 @@ export type AgentResponse = {
   cards: PickCard[];
   trace: AgentTraceStep[];
   fallbackUsed: boolean;
+  followUps?: string[];
 };
 
 export type SearchToolInput = {

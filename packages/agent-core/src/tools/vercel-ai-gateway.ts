@@ -8,6 +8,11 @@ type ChatCompletionResponse = {
   }>;
 };
 
+type GatewaySummary = {
+  answer?: string;
+  followUps?: unknown;
+};
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -29,6 +34,22 @@ function getGatewayConfig() {
     baseUrl: process.env.VERCEL_AI_GATEWAY_BASE_URL ?? process.env.AI_GATEWAY_BASE_URL ?? "https://ai-gateway.vercel.sh/v1",
     model: process.env.VERCEL_AI_GATEWAY_MODEL ?? process.env.AI_GATEWAY_MODEL ?? "openai/gpt-5.4"
   };
+}
+
+function parseGatewaySummary(content: string): { answer: string; followUps?: string[] } {
+  try {
+    const parsed = JSON.parse(content) as GatewaySummary;
+    const answer = parsed.answer?.trim();
+    const followUps = Array.isArray(parsed.followUps)
+      ? parsed.followUps.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean).slice(0, 4)
+      : undefined;
+
+    if (answer) return { answer, followUps };
+  } catch {
+    // Some gateway models may return plain text despite the JSON instruction.
+  }
+
+  return { answer: content };
 }
 
 export async function summarizeWithVercelAiGateway(request: AgentRequest, response: AgentResponse): Promise<AgentResponse> {
@@ -55,7 +76,7 @@ export async function summarizeWithVercelAiGateway(request: AgentRequest, respon
           {
             role: "system",
             content:
-              "You are GoAround SG. Write one concise, practical recommendation explanation using the ranked source-backed cards. Do not invent details. Remind the user to check source links for hours, prices, and availability."
+              "You are GoAround SG. Return only valid JSON with keys answer and followUps. Use the ranked Exa cards as the source of truth. Do not invent opening hours, prices, ratings, review counts, dietary info, or availability. If a detail is not visible in the card title/description/source text, say 'check source' or 'not shown in snippet'. The answer should be useful and structured: start with the best pick, then include 2-4 compact bullets comparing practical details such as opening time, price range, review signal, location/context, and what to verify. Use conversationHistory to resolve follow-up questions and remember what was already recommended. followUps is exactly 4 short next questions tailored to the cards, the latest message, and the conversation."
           },
           {
             role: "user",
@@ -63,12 +84,17 @@ export async function summarizeWithVercelAiGateway(request: AgentRequest, respon
               message: request.message,
               locationName: request.context.locationName,
               fallbackUsed: response.fallbackUsed,
+              conversationHistory: request.conversationHistory?.slice(-8),
               cards: response.cards.map((card) => ({
                 title: card.title,
                 description: card.description,
                 category: card.category,
                 sourceName: card.sourceName,
-                tags: card.tags
+                sourceUrl: card.sourceUrl,
+                score: card.score,
+                whyShown: card.whyShown,
+                tags: card.tags,
+                metadata: card.metadata
               }))
             })
           }
@@ -83,19 +109,31 @@ export async function summarizeWithVercelAiGateway(request: AgentRequest, respon
     }
 
     const payload = (await gatewayResponse.json()) as ChatCompletionResponse;
-    const answer = payload.choices?.[0]?.message?.content?.trim();
+    const content = payload.choices?.[0]?.message?.content?.trim();
 
-    if (!answer) {
+    if (!content) {
       return {
         ...response,
         trace: [...response.trace, gatewayTrace("failed", "Vercel AI Gateway returned no explanation content.", startedAt)]
       };
     }
 
+    const summary = parseGatewaySummary(content);
+
     return {
       ...response,
-      answer,
-      trace: [...response.trace, gatewayTrace("success", `Vercel AI Gateway generated the final explanation with ${model}.`, startedAt)]
+      answer: summary.answer,
+      followUps: summary.followUps,
+      trace: [
+        ...response.trace,
+        gatewayTrace(
+          "success",
+          summary.followUps?.length
+            ? `Vercel AI Gateway generated the final explanation and ${summary.followUps.length} follow-ups with ${model}.`
+            : `Vercel AI Gateway generated the final explanation with ${model}.`,
+          startedAt
+        )
+      ]
     };
   } catch (error) {
     return {
