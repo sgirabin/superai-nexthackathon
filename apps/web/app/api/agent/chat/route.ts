@@ -44,7 +44,8 @@ export async function POST(request: NextRequest) {
       sessionId: body.sessionId ?? "web-session-demo",
       message: body.message ?? "",
       context: body.context ?? defaultUserContext,
-      conversationHistory: body.conversationHistory
+      conversationHistory: body.conversationHistory,
+      previousCards: body.previousCards
     };
 
     if (process.env.NEXT_PUBLIC_AGENT_API_MODE === "aws") {
