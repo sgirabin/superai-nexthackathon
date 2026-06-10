@@ -156,16 +156,16 @@ describe("decision engine integration", () => {
               {
                 id: "lunch-1",
                 title: "Lunch Place A",
-                url: "https://example.com/lunch-a",
+                url: "https://lunch-a.example.com/menu",
                 text: "Lunch Place A has chicken rice at S$8. Address: 1 Masked Road Singapore 111111. Opening hours: Daily 11am-8pm.",
                 highlights: ["S$8", "1 Masked Road Singapore 111111", "Daily 11am-8pm"],
                 score: 0.9
               },
               {
                 id: "lunch-2",
-                title: "Lunch Place B",
-                url: "https://example.com/lunch-b",
-                text: "Lunch Place B has noodles at S$12. Address: 2 Masked Street Singapore 222222. Opening hours: Daily 10am-9pm.",
+                title: "Noodle House B",
+                url: "https://lunch-b.example.com/menu",
+                text: "Noodle House B has noodles at S$12. Address: 2 Masked Street Singapore 222222. Opening hours: Daily 10am-9pm.",
                 highlights: ["S$12", "2 Masked Street Singapore 222222", "Daily 10am-9pm"],
                 score: 0.82
               }
@@ -220,7 +220,7 @@ describe("decision engine integration", () => {
     expect(exaCalls).toBe(1);
     expect(followUp.cards.map((card) => card.id)).toEqual(first.cards.map((card) => card.id));
     expect(followUp.answer).toContain("Lunch Place A");
-    expect(followUp.answer).toContain("Lunch Place B");
+    expect(followUp.answer).toContain("Noodle House B");
     expect(followUp.trace.some((step) => step.step === "Reuse previous candidates" && step.status === "success")).toBe(true);
   });
 });

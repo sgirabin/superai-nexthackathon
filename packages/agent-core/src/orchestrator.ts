@@ -34,8 +34,8 @@ function hasComparisonOrFilterAsk(message: string): boolean {
   return /\b(compare|compared|comparison|which|rank|sort|better|best|cheapest|closest|nearer|distance|price|value|open now|opening hours?|still open|worth it|choose|pick)\b/i.test(message);
 }
 
-function hasFreshDomainSignal(message: string): boolean {
-  return /\b(event|events|activity|activities|weekend|kids|family|things to do|beer|bar|pub|pint|drink|cocktail|wine|happy hour|eat|food|lunch|dinner|breakfast|hawker|restaurant|coffee|meal|deal|promo|promotion|discount|grocery|supermarket|offer|lobang|sale|rain|rainy|indoor|weather|shower|visit|visitor|tourist|itinerary|plan|explore|merchant|business|campaign|stripe|publish)\b/i.test(message);
+function hasNewDomainSignal(message: string): boolean {
+  return /\b(event|events|activity|activities|weekend|kids|family|things to do|beer|bar|pub|pint|drink|cocktail|wine|happy hour|grocery|supermarket|rain|rainy|indoor|weather|shower|visit|visitor|tourist|itinerary|merchant|business|campaign|stripe|publish)\b/i.test(message);
 }
 
 function categoriesForIntent(intent: AgentIntent): PickCategory[] {
@@ -45,7 +45,7 @@ function categoriesForIntent(intent: AgentIntent): PickCategory[] {
     case "event_discovery":
       return ["event"];
     case "deal_discovery":
-      return ["deal", "promotion", "grocery"];
+      return ["deal", "promotion", "grocery", "food"];
     case "rainy_day_plan":
       return ["weather", "event", "food", "other"];
     case "merchant_promotion":
@@ -68,15 +68,12 @@ function shouldReusePreviousCards(message: string, intent: AgentIntent, previous
 
   const referential = hasReferentialLanguage(message);
   const comparisonOrFilter = hasComparisonOrFilterAsk(message);
-  const freshDomain = hasFreshDomainSignal(message);
+  const newDomain = hasNewDomainSignal(message);
   const compatible = previousCardsMatchIntent(intent, previousCards);
 
-  if (freshDomain && !compatible) return false;
-  if (referential && compatible) return true;
-  if (comparisonOrFilter && !freshDomain) return true;
-  if (comparisonOrFilter && compatible) return true;
-
-  return false;
+  if (!compatible) return false;
+  if (referential) return true;
+  return comparisonOrFilter && !newDomain;
 }
 
 export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
@@ -93,6 +90,7 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   const intent = classifyIntent(request.message);
   const query = buildSearchQuery(intent, request.message, request.context.locationName);
   const reusedPreviousCards = shouldReusePreviousCards(request.message, intent, request.previousCards);
+  const previousCards = reusedPreviousCards ? request.previousCards : undefined;
   const traces: AgentTraceStep[] = [
     trace("Classify request", "success", `Intent classified as ${intent}.`, "orchestrator"),
     reusedPreviousCards
@@ -103,9 +101,9 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   let ranked: PickCard[];
   let fallbackUsed = false;
 
-  if (reusedPreviousCards) {
-    ranked = rankCards(request.previousCards, request.context, 5);
-    traces.push(trace("Reuse previous candidates", "success", `Reused ${request.previousCards.length} displayed cards because the follow-up stayed relevant to the current result set.`, "orchestrator"));
+  if (previousCards) {
+    ranked = rankCards(previousCards, request.context, 5);
+    traces.push(trace("Reuse previous candidates", "success", `Reused ${previousCards.length} displayed cards because the follow-up stayed relevant to the current result set.`, "orchestrator"));
   } else {
     if (hasPreviousCards(request.previousCards)) {
       traces.push(trace("Ignore previous candidates", "skipped", "Previous cards were present, but the new message appears to change topic or category, so a fresh Exa search was used.", "orchestrator"));

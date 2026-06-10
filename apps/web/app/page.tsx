@@ -209,7 +209,33 @@ function FormattedAssistantMessage({ content }: { content: string }) {
     const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
     return parts.map((part, partIndex) => part.startsWith("**") && part.endsWith("**") ? <strong key={`${part}-${partIndex}`}>{part.slice(2, -2)}</strong> : <span key={`${part}-${partIndex}`}>{part}</span>);
   }
-  return <div className="assistant-copy">{paragraphs.map((paragraph, index) => <p key={`${paragraph.slice(0, 24)}-${index}`}>{renderInline(paragraph)}</p>)}</div>;
+
+  return (
+    <div className="assistant-copy">
+      {paragraphs.map((paragraph, index) => {
+        const lines = paragraph.split("\n").map((line) => line.trim()).filter(Boolean);
+        const bulletLines = lines.filter((line) => /^[-•]\s+/.test(line));
+        const introLines = lines.filter((line) => !/^[-•]\s+/.test(line));
+
+        if (bulletLines.length > 0) {
+          return (
+            <div className="assistant-section" key={`${paragraph.slice(0, 24)}-${index}`}>
+              {introLines.map((line, lineIndex) => <p key={`${line}-${lineIndex}`}>{renderInline(line)}</p>)}
+              <ul>
+                {bulletLines.map((line, lineIndex) => <li key={`${line}-${lineIndex}`}>{renderInline(line.replace(/^[-•]\s+/, ""))}</li>)}
+              </ul>
+            </div>
+          );
+        }
+
+        if (lines.length > 1) {
+          return <div className="assistant-section" key={`${paragraph.slice(0, 24)}-${index}`}>{lines.map((line, lineIndex) => <p key={`${line}-${lineIndex}`}>{renderInline(line)}</p>)}</div>;
+        }
+
+        return <p key={`${paragraph.slice(0, 24)}-${index}`}>{renderInline(paragraph)}</p>;
+      })}
+    </div>
+  );
 }
 
 function ResultCarousel({ cards }: { cards: PickCard[] }) {
