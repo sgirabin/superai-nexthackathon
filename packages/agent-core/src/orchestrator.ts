@@ -1,4 +1,4 @@
-import type { AgentRequest, AgentResponse, AgentTraceStep, PickCard } from "./types";
+import type { AgentIntent, AgentRequest, AgentResponse, AgentTraceStep, PickCard, PickCategory } from "./types";
 import { mockAgentResponse } from "./mock-data";
 import { classifyIntent, buildSearchQuery } from "./intent";
 import { rankCards } from "./ranking";
@@ -22,12 +22,61 @@ function buildAnswer(request: AgentRequest, cardsCount: number, fallbackUsed: bo
   return `I found ${cardsCount} source-backed picks near ${request.context.locationName}.${fallbackNote} Open the source before acting, especially for prices, timings, or promotion validity.`;
 }
 
-function isComparisonFollowUp(message: string): boolean {
-  return /\b(compare|compared|comparison|which|rank|sort|same|these|those|price|distance|closest|cheapest|value|open now|nearer|better)\b/i.test(message);
-}
-
 function hasPreviousCards(cards?: PickCard[]): cards is PickCard[] {
   return Array.isArray(cards) && cards.length > 0;
+}
+
+function hasReferentialLanguage(message: string): boolean {
+  return /\b(these|those|this|that|them|above|previous|prior|same|displayed|shown|results?|cards?|options?|picks?|list|first|second|third|1st|2nd|3rd|#\d+)\b/i.test(message);
+}
+
+function hasComparisonOrFilterAsk(message: string): boolean {
+  return /\b(compare|compared|comparison|which|rank|sort|better|best|cheapest|closest|nearer|distance|price|value|open now|opening hours?|still open|worth it|choose|pick)\b/i.test(message);
+}
+
+function hasFreshDomainSignal(message: string): boolean {
+  return /\b(event|events|activity|activities|weekend|kids|family|things to do|beer|bar|pub|pint|drink|cocktail|wine|happy hour|eat|food|lunch|dinner|breakfast|hawker|restaurant|coffee|meal|deal|promo|promotion|discount|grocery|supermarket|offer|lobang|sale|rain|rainy|indoor|weather|shower|visit|visitor|tourist|itinerary|plan|explore|merchant|business|campaign|stripe|publish)\b/i.test(message);
+}
+
+function categoriesForIntent(intent: AgentIntent): PickCategory[] {
+  switch (intent) {
+    case "food_discovery":
+      return ["food"];
+    case "event_discovery":
+      return ["event"];
+    case "deal_discovery":
+      return ["deal", "promotion", "grocery"];
+    case "rainy_day_plan":
+      return ["weather", "event", "food", "other"];
+    case "merchant_promotion":
+      return ["promotion", "deal"];
+    case "visitor_plan":
+    case "general_discovery":
+      return ["event", "food", "deal", "promotion", "transport", "other"];
+    default:
+      return ["other"];
+  }
+}
+
+function previousCardsMatchIntent(intent: AgentIntent, cards: PickCard[]): boolean {
+  const allowed = new Set(categoriesForIntent(intent));
+  return cards.some((card) => allowed.has(card.category));
+}
+
+function shouldReusePreviousCards(message: string, intent: AgentIntent, previousCards?: PickCard[]): previousCards is PickCard[] {
+  if (!hasPreviousCards(previousCards)) return false;
+
+  const referential = hasReferentialLanguage(message);
+  const comparisonOrFilter = hasComparisonOrFilterAsk(message);
+  const freshDomain = hasFreshDomainSignal(message);
+  const compatible = previousCardsMatchIntent(intent, previousCards);
+
+  if (freshDomain && !compatible) return false;
+  if (referential && compatible) return true;
+  if (comparisonOrFilter && !freshDomain) return true;
+  if (comparisonOrFilter && compatible) return true;
+
+  return false;
 }
 
 export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
@@ -43,22 +92,25 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   const runId = `run-${crypto.randomUUID()}`;
   const intent = classifyIntent(request.message);
   const query = buildSearchQuery(intent, request.message, request.context.locationName);
-  const previousCards = hasPreviousCards(request.previousCards) ? request.previousCards : undefined;
-  const reusedPreviousCards = isComparisonFollowUp(request.message) && Boolean(previousCards);
+  const reusedPreviousCards = shouldReusePreviousCards(request.message, intent, request.previousCards);
   const traces: AgentTraceStep[] = [
     trace("Classify request", "success", `Intent classified as ${intent}.`, "orchestrator"),
     reusedPreviousCards
-      ? trace("Create tool plan", "success", "Plan: reuse previous ranked cards, compare trade-offs, then generate a contextual answer.", "orchestrator")
+      ? trace("Create tool plan", "success", "Plan: reuse displayed cards because the follow-up refers to the same result set, compare trade-offs, then generate a contextual answer.", "orchestrator")
       : trace("Create tool plan", "success", `Plan: use Exa search, ranking engine, then safe answer generation. Query: ${query}`, "orchestrator")
   ];
 
   let ranked: PickCard[];
   let fallbackUsed = false;
 
-  if (reusedPreviousCards && previousCards) {
-    ranked = rankCards(previousCards, request.context, 5);
-    traces.push(trace("Reuse previous candidates", "success", `Reused ${previousCards.length} prior cards from the conversation instead of calling Exa again.`, "orchestrator"));
+  if (reusedPreviousCards) {
+    ranked = rankCards(request.previousCards, request.context, 5);
+    traces.push(trace("Reuse previous candidates", "success", `Reused ${request.previousCards.length} displayed cards because the follow-up stayed relevant to the current result set.`, "orchestrator"));
   } else {
+    if (hasPreviousCards(request.previousCards)) {
+      traces.push(trace("Ignore previous candidates", "skipped", "Previous cards were present, but the new message appears to change topic or category, so a fresh Exa search was used.", "orchestrator"));
+    }
+
     const searchResult = await searchWithExa({ query, context: request.context, intent });
     fallbackUsed = searchResult.fallbackUsed;
     traces.push(
