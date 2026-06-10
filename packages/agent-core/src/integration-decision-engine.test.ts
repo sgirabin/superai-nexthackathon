@@ -140,4 +140,87 @@ describe("decision engine integration", () => {
     expect(response.trace.some((step) => step.tool === "exa" && step.status === "success")).toBe(true);
     expect(response.trace.some((step) => step.tool === "ai-gateway" && step.status === "success")).toBe(true);
   });
+
+  it("reuses previous ranked cards for comparison follow-ups instead of starting a new Exa search", async () => {
+    process.env.EXA_API_KEY = "test-exa-key";
+    process.env.VERCEL_AI_GATEWAY_API_KEY = "test-ai-gateway-key";
+
+    let exaCalls = 0;
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const href = String(url);
+      if (href.includes("/search")) {
+        exaCalls += 1;
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: "lunch-1",
+                title: "Lunch Place A",
+                url: "https://example.com/lunch-a",
+                text: "Lunch Place A has chicken rice at S$8. Address: 1 Masked Road Singapore 111111. Opening hours: Daily 11am-8pm.",
+                highlights: ["S$8", "1 Masked Road Singapore 111111", "Daily 11am-8pm"],
+                score: 0.9
+              },
+              {
+                id: "lunch-2",
+                title: "Lunch Place B",
+                url: "https://example.com/lunch-b",
+                text: "Lunch Place B has noodles at S$12. Address: 2 Masked Street Singapore 222222. Opening hours: Daily 10am-9pm.",
+                highlights: ["S$12", "2 Masked Street Singapore 222222", "Daily 10am-9pm"],
+                score: 0.82
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (href.includes("/chat/completions")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ content: string }> };
+        const payload = JSON.parse(body.messages?.[1]?.content ?? "{}") as { message?: string; cards?: Array<{ title?: string }> };
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    answer: `Comparing the same cards for: ${payload.message}. Options: ${payload.cards?.map((card) => card.title).join(", ")}.`,
+                    followUps: ["Pick cheapest", "Pick nearest", "Show opening hours", "Give final choice"]
+                  })
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      throw new Error(`Unexpected fetch URL: ${href}`);
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const first = await runAgent({
+      sessionId: "integration-test-session",
+      message: "lunch near me under $16",
+      context: { ...defaultUserContext, locationName: "near MASKED_AREA", timeOfDay: "lunch" }
+    });
+
+    const followUp = await runAgent({
+      sessionId: "integration-test-session",
+      message: "compare price and distance",
+      context: { ...defaultUserContext, locationName: "near MASKED_AREA", timeOfDay: "lunch" },
+      previousCards: first.cards,
+      conversationHistory: [
+        { role: "user", content: "lunch near me under $16" },
+        { role: "assistant", content: first.answer }
+      ]
+    });
+
+    expect(exaCalls).toBe(1);
+    expect(followUp.cards.map((card) => card.id)).toEqual(first.cards.map((card) => card.id));
+    expect(followUp.answer).toContain("Lunch Place A");
+    expect(followUp.answer).toContain("Lunch Place B");
+    expect(followUp.trace.some((step) => step.step === "Reuse previous candidates" && step.status === "success")).toBe(true);
+  });
 });
