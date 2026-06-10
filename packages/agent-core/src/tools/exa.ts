@@ -95,7 +95,11 @@ function cardSpecificity(card: PickCard): number {
   const title = card.title.toLowerCase();
   let score = 0;
   if (/bay|centre|center|market|street|road|ave|avenue|mall|branch|outlet|gluttons/.test(title)) score += 2;
+  if (card.description.length > 120) score += 2;
   if (card.description.length > 80) score += 1;
+  if (card.metadata?.priceSignals) score += 2;
+  if (card.metadata?.addressSignals) score += 1;
+  if (card.metadata?.openingSignals) score += 1;
   if (card.sourceVerified) score += 1;
   score += Math.min(2, Math.floor(card.title.length / 35));
   return score + (card.score ?? 0);
@@ -136,9 +140,65 @@ function dedupeCards(cards: PickCard[], limit = 8): PickCard[] {
   return kept.slice(0, limit);
 }
 
+function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function unique(items: string[], limit: number): string[] {
+  return Array.from(new Set(items.map(compactWhitespace).filter(Boolean))).slice(0, limit);
+}
+
+function extractPriceSignals(text: string): string[] {
+  return unique(
+    [
+      ...text.matchAll(/(?:S\$|SGD|\$)\s?\d{1,3}(?:\.\d{1,2})?(?:\s?(?:\+\+|net|nett|per\s?pint|pint|beer|drink|cocktail|set|meal))?/gi),
+      ...text.matchAll(/\b(?:under|below|less than)\s?(?:S\$|SGD|\$)?\s?\d{1,3}\b/gi),
+      ...text.matchAll(/\b(?:happy hour|pint|beer|drink deals?|promo(?:tion)?s?|discounts?)\b[^.\n]{0,80}/gi)
+    ].map((match) => match[0]),
+    4
+  );
+}
+
+function extractAddressSignals(text: string): string[] {
+  return unique(
+    [
+      ...text.matchAll(/\b\d{1,3}[A-Z]?\s+[A-Za-z0-9'’&.\- ]{3,60}\s(?:Road|Rd|Street|St|Avenue|Ave|Lane|Ln|Drive|Dr|Walk|Way|Quay|Boulevard|Blvd)\b[^.\n]{0,30}/g),
+      ...text.matchAll(/\b(?:#\d{2}-\d{2}|B\d{1,2}-\d{2}|Level\s?\d|Singapore\s?\d{6})\b[^.\n]{0,40}/gi)
+    ].map((match) => match[0]),
+    3
+  );
+}
+
+function extractOpeningSignals(text: string): string[] {
+  return unique(
+    [
+      ...text.matchAll(/\b(?:open(?:ing)? hours?|hours?|daily|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)[^.\n]{0,100}/gi),
+      ...text.matchAll(/\b\d{1,2}(?::\d{2})?\s?(?:am|pm|AM|PM)\s?(?:-|to|–|—)\s?\d{1,2}(?::\d{2})?\s?(?:am|pm|AM|PM)\b/g)
+    ].map((match) => match[0]),
+    3
+  );
+}
+
+function buildRichDescription(result: ExaResult): { description: string; priceSignals: string[]; addressSignals: string[]; openingSignals: string[]; sourceSnippet: string } {
+  const sourceSnippet = compactWhitespace([...(result.highlights ?? []), result.text ?? ""].join(" "));
+  const priceSignals = extractPriceSignals(sourceSnippet);
+  const addressSignals = extractAddressSignals(sourceSnippet);
+  const openingSignals = extractOpeningSignals(sourceSnippet);
+  const evidence: string[] = [];
+
+  if (priceSignals.length) evidence.push(`Price/deal signals: ${priceSignals.join(" · ")}`);
+  if (addressSignals.length) evidence.push(`Address signals: ${addressSignals.join(" · ")}`);
+  if (openingSignals.length) evidence.push(`Opening/time signals: ${openingSignals.join(" · ")}`);
+
+  const snippet = sourceSnippet.slice(0, evidence.length ? 180 : 320);
+  const description = compactWhitespace([...evidence, snippet || "Source-backed local result found by Exa."].join(" | ")).slice(0, 520);
+
+  return { description, priceSignals, addressSignals, openingSignals, sourceSnippet };
+}
+
 function toPickCard(result: ExaResult, input: SearchToolInput, index: number): PickCard {
   const url = result.url ?? "https://exa.ai";
-  const description = result.text?.slice(0, 220) || result.highlights?.join(" ").slice(0, 220) || "Source-backed local result found by Exa.";
+  const { description, priceSignals, addressSignals, openingSignals, sourceSnippet } = buildRichDescription(result);
   return {
     id: result.id ?? `exa-${Date.now()}-${index}`,
     title: result.title ?? "Local source result",
@@ -148,10 +208,25 @@ function toPickCard(result: ExaResult, input: SearchToolInput, index: number): P
     sourceUrl: url,
     sourceVerified: url.startsWith("http"),
     score: result.score ?? 0.62,
-    tags: [input.intent.replaceAll("_", " "), input.context.locationName, "exa", "live source"],
+    whyShown: priceSignals.length || addressSignals.length || openingSignals.length
+      ? "Matched live source snippets with practical decision signals. Verify latest prices, hours, and availability at source."
+      : "Matched live source content for your location and request. Verify details at source.",
+    tags: [
+      input.intent.replaceAll("_", " "),
+      input.context.locationName,
+      "exa",
+      "live source",
+      ...(priceSignals.length ? ["price signal"] : []),
+      ...(addressSignals.length ? ["address signal"] : []),
+      ...(openingSignals.length ? ["opening hours signal"] : [])
+    ],
     metadata: {
       publishedDate: result.publishedDate,
-      author: result.author
+      author: result.author,
+      priceSignals,
+      addressSignals,
+      openingSignals,
+      sourceSnippet: sourceSnippet.slice(0, 1000)
     }
   };
 }
@@ -181,8 +256,13 @@ export async function searchWithExa(input: SearchToolInput): Promise<SearchToolR
         numResults: 12,
         useAutoprompt: true,
         contents: {
-          text: true,
-          highlights: true
+          text: {
+            maxCharacters: 1600
+          },
+          highlights: {
+            numSentences: 5,
+            highlightsPerUrl: 3
+          }
         }
       })
     });
