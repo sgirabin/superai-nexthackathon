@@ -47,7 +47,7 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
     )
   );
 
-  const ranked = rankCards(searchResult.cards, request.context, 6);
+  const ranked = rankCards(searchResult.cards, request.context, 5);
   traces.push(trace("Rank candidate cards", "success", `Ranked ${ranked.length} cards by distance, interest, time, source, freshness, and weather.`, "ranking"));
 
   const response: AgentResponse = {
