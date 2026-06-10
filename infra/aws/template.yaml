@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: GoAround SG AWS agent runtime.
+
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+  ExaApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  VercelAiGatewayApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  VercelAiGatewayModel:
+    Type: String
+    Default: openai/gpt-5.4
+  VercelAiGatewayBaseUrl:
+    Type: String
+    Default: https://ai-gateway.vercel.sh/v1
+  AgentApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 20
+    MemorySize: 1024
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        AGENT_RUNS_TABLE: !Ref AgentRunsTable
+        EXA_API_KEY: !Ref ExaApiKey
+        VERCEL_AI_GATEWAY_API_KEY: !Ref VercelAiGatewayApiKey
+        VERCEL_AI_GATEWAY_MODEL: !Ref VercelAiGatewayModel
+        VERCEL_AI_GATEWAY_BASE_URL: !Ref VercelAiGatewayBaseUrl
+        AGENT_API_KEY: !Ref AgentApiKey
+
+Resources:
+  AgentApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      CorsConfiguration:
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+          - x-api-key
+        AllowOrigins:
+          - "*"
+
+  AgentRunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: GoAroundAgentRuns
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: runId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: runId
+          KeyType: HASH
+
+  AgentRuntimeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/agent-handler.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgentRunsTable
+      Events:
+        AgentChat:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AgentApi
+            Path: /agent/chat
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/agent-handler.ts
+        Format: esm
+        Minify: true
+        Sourcemap: true
+        Target: es2022
+
+Outputs:
+  AgentApiUrl:
+    Description: Agent API endpoint for Vercel AWS_AGENT_API_URL.
+    Value: !Sub "https://${AgentApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/agent/chat"
+  AgentRunsTableName:
+    Description: DynamoDB table for agent run logs.
+    Value: !Ref AgentRunsTable
