@@ -56,7 +56,7 @@ const landmarks: Landmark[] = [
 ];
 
 const welcomeMessage =
-  "Hi, I’m Ask GoAround. I can search live sources and rank nearby food, activities, deals, or rainy-day ideas around your current area. Try one of the prompts below or ask your own question.";
+  "Hi, I’m Ask GoAround — your local decision engine. Tell me what you’re deciding, what matters most, or what constraints you have, and I’ll compare live signals, rank the trade-offs, and recommend the next best move around your area.";
 
 const loadingSteps = [
   { label: "Classifying intent", tool: "orchestrator" },
