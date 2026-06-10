@@ -1,4 +1,4 @@
-# SuperAI] Next Hackathon 
+# [SuperAI] Next Hackathon 
 
 # Agentic GoAround SG
 
