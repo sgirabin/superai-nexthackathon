@@ -43,7 +43,8 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   const runId = `run-${crypto.randomUUID()}`;
   const intent = classifyIntent(request.message);
   const query = buildSearchQuery(intent, request.message, request.context.locationName);
-  const reusedPreviousCards = isComparisonFollowUp(request.message) && hasPreviousCards(request.previousCards);
+  const previousCards = hasPreviousCards(request.previousCards) ? request.previousCards : undefined;
+  const reusedPreviousCards = isComparisonFollowUp(request.message) && Boolean(previousCards);
   const traces: AgentTraceStep[] = [
     trace("Classify request", "success", `Intent classified as ${intent}.`, "orchestrator"),
     reusedPreviousCards
@@ -54,9 +55,9 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   let ranked: PickCard[];
   let fallbackUsed = false;
 
-  if (reusedPreviousCards) {
-    ranked = rankCards(request.previousCards, request.context, 5);
-    traces.push(trace("Reuse previous candidates", "success", `Reused ${request.previousCards.length} prior cards from the conversation instead of calling Exa again.`, "orchestrator"));
+  if (reusedPreviousCards && previousCards) {
+    ranked = rankCards(previousCards, request.context, 5);
+    traces.push(trace("Reuse previous candidates", "success", `Reused ${previousCards.length} prior cards from the conversation instead of calling Exa again.`, "orchestrator"));
   } else {
     const searchResult = await searchWithExa({ query, context: request.context, intent });
     fallbackUsed = searchResult.fallbackUsed;
