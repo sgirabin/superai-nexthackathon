@@ -58,6 +58,15 @@ const landmarks: Landmark[] = [
 const welcomeMessage =
   "Hi, I’m Ask GoAround. I can search live sources and rank nearby food, activities, deals, or rainy-day ideas around your current area. Try one of the prompts below or ask your own question.";
 
+const loadingSteps = [
+  { label: "Classifying intent", tool: "orchestrator" },
+  { label: "Planning tools", tool: "orchestrator" },
+  { label: "Searching live sources", tool: "exa" },
+  { label: "Re-ranking candidates", tool: "ranking" },
+  { label: "Writing explanation", tool: "ai-gateway" },
+  { label: "Logging run", tool: "storage" }
+];
+
 function inferFoodIcon(card: PickCard): string {
   const text = `${card.title} ${card.description} ${card.tags.join(" ")}`.toLowerCase();
   if (/chicken\s*rice|rice|nasi|biryani/.test(text)) return "🍚";
@@ -185,18 +194,65 @@ function cardMatchesInterest(card: PickCard, interests: string[]) {
   });
 }
 
+function FormattedAssistantMessage({ content }: { content: string }) {
+  const paragraphs = content.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
+  function renderInline(text: string) {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    return parts.map((part, partIndex) =>
+      part.startsWith("**") && part.endsWith("**") ? <strong key={`${part}-${partIndex}`}>{part.slice(2, -2)}</strong> : <span key={`${part}-${partIndex}`}>{part}</span>
+    );
+  }
+
+  return (
+    <div className="assistant-copy">
+      {paragraphs.map((paragraph, index) => {
+        const lines = paragraph.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (lines.length > 1) {
+          return (
+            <div className="assistant-lines" key={`${paragraph.slice(0, 24)}-${index}`}>
+              {lines.map((line, lineIndex) => <p key={`${line}-${lineIndex}`}>{renderInline(line)}</p>)}
+            </div>
+          );
+        }
+
+        return (
+          <p key={`${paragraph.slice(0, 24)}-${index}`}>
+            {renderInline(paragraph)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
 function ResultCarousel({ cards }: { cards: PickCard[] }) {
   if (cards.length === 0) return null;
   return (
     <div className="chat-card-carousel">
-      {cards.slice(0, 5).map((card) => (
+      {cards.slice(0, 3).map((card, index) => (
         <article className="chat-result-card" key={card.id}>
-          <div className="chat-result-top"><span className="tag">{card.category}</span><CategoryIcon card={card} /></div>
+          <div className="chat-result-top"><span className="tag">#{index + 1} · {card.category}</span><CategoryIcon card={card} /></div>
           <strong>{card.title}</strong>
           <p className="muted">{card.description}</p>
           <div className="chat-result-footer"><span>{card.distanceKm ? `📍 ${card.distanceKm} km` : "Source-backed"}</span><a href={card.sourceUrl} target="_blank">Source ↗</a></div>
         </article>
       ))}
+    </div>
+  );
+}
+
+function LoadingAgentSteps() {
+  return (
+    <div className="agent-progress">
+      <div className="agent-progress-title"><span>🤖</span><strong>Agent runtime working</strong></div>
+      <div className="agent-progress-steps">
+        {loadingSteps.map((step, index) => (
+          <div className="agent-progress-step" key={step.label}>
+            <span>{index + 1}</span>
+            <div><strong>{step.label}</strong><small>{step.tool}</small></div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -243,16 +299,22 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
   const [response, setResponse] = useState<AgentResponse>(todayResponse);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", content: welcomeMessage }]);
-  const prompts = messages.length === 1 ? quickPrompts : buildFollowUpSuggestions(response);
+  const prompts = messages.length === 1 ? quickPrompts : response.followUps?.length ? response.followUps : buildFollowUpSuggestions(response);
 
   useEffect(() => { if (messages.length === 1) setResponse(todayResponse); }, [messages.length, todayResponse]);
 
   async function askAgent(message: string) {
     if (!message.trim()) return;
-    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: message }]);
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: message };
+    const conversationHistory = [...messages, userMessage]
+      .filter((item) => item.id !== "welcome")
+      .slice(-8)
+      .map((item) => ({ role: item.role, content: item.content }));
+
+    setMessages((current) => [...current, userMessage]);
     setLoading(true);
     try {
-      const res = await fetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "demo-session", message, context: userContext }) });
+      const res = await fetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "demo-session", message, context: userContext, conversationHistory }) });
       const data = (await res.json()) as AgentResponse;
       setResponse(data);
       setMessages((current) => [...current, { id: data.runId, role: "assistant", content: data.answer, cards: data.cards }]);
@@ -269,11 +331,11 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests 
       <main className="main-card chat-hero fixed-panel">
         <div className="fixed-panel-header" style={{ display: "flex", justifyContent: "space-between" }}><h2>💬 Ask GoAround</h2><span className="muted">🛡️ {response.fallbackUsed ? "Safe fallback" : "Live Exa search"}</span></div>
         <div className="chat-scroll flexible-scroll">
-          {messages.map((message) => <div className={`chat-message-row ${message.role}`} key={message.id}><div className={`chat-bubble ${message.role}`}><span>{message.role === "assistant" ? "🤖" : "👤"}</span><span>{message.content}</span></div>{message.role === "assistant" && message.cards && <ResultCarousel cards={message.cards} />}</div>)}
-          {loading && <div className="chat-bubble assistant"><span>🤖</span><span>Searching live sources and ranking local picks…</span></div>}
+          {messages.map((message) => <div className={`chat-message-row ${message.role}`} key={message.id}><div className={`chat-bubble ${message.role}`}><span>{message.role === "assistant" ? "🤖" : "👤"}</span>{message.role === "assistant" ? <FormattedAssistantMessage content={message.content} /> : <span>{message.content}</span>}</div>{message.role === "assistant" && message.cards && <ResultCarousel cards={message.cards} />}</div>)}
+          {loading && <LoadingAgentSteps />}
           {messages.length === 1 && <div className="empty-chat-hint"><div className="robot">🤖</div><h2>How can I help you today?</h2><div className="muted">Try one of the ideas below or ask anything.</div></div>}
         </div>
-        <div className="quick-prompts">{prompts.map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}</button>)}</div>
+        <div className="prompt-strip"><span>{messages.length === 1 ? "Starter prompts" : response.followUps?.length ? "AI Gateway follow-ups" : "Deterministic follow-ups"}</span><div className="quick-prompts">{prompts.map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}</button>)}</div></div>
         <form className="chat-form" onSubmit={onSubmit}><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask GoAround about this area..." /><button className="send-button" disabled={loading}>{loading ? "…" : "➤"}</button></form>
         <div className="trace muted compact-trace"><strong>Agent trace</strong>{response.trace.map((step, index) => <div key={`${step.step}-${index}`}>• {step.step}: {step.detail}</div>)}</div>
       </main>

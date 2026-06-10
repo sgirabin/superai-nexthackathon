@@ -1,0 +1,4 @@
+.aws-sam/
+.aws-direct/
+.sam-local-packages/
+node_modules/

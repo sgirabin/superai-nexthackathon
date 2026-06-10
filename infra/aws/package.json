@@ -1,0 +1,19 @@
+{
+  "name": "@goaround/aws-agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "sam build",
+    "deploy": "sam deploy"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.699.0",
+    "@aws-sdk/lib-dynamodb": "^3.699.0",
+    "@goaround/agent-core": "file:.sam-local-packages/agent-core"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  }
+}

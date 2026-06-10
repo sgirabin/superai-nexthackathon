@@ -3,6 +3,7 @@ import { mockAgentResponse } from "./mock-data";
 import { classifyIntent, buildSearchQuery } from "./intent";
 import { rankCards } from "./ranking";
 import { searchWithExa } from "./tools/exa";
+import { summarizeWithVercelAiGateway } from "./tools/vercel-ai-gateway";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -49,7 +50,7 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
   const ranked = rankCards(searchResult.cards, request.context, 6);
   traces.push(trace("Rank candidate cards", "success", `Ranked ${ranked.length} cards by distance, interest, time, source, freshness, and weather.`, "ranking"));
 
-  return {
+  const response: AgentResponse = {
     runId,
     intent,
     answer: buildAnswer(request, ranked.length, searchResult.fallbackUsed),
@@ -57,4 +58,6 @@ export async function runAgent(request: AgentRequest): Promise<AgentResponse> {
     trace: traces,
     fallbackUsed: searchResult.fallbackUsed
   };
+
+  return summarizeWithVercelAiGateway(request, response);
 }
