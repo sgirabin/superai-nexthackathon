@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildFallbackPickCards,
   defaultUserContext,
@@ -262,24 +262,31 @@ function PicksPanel({ response, radiusKm, setRadiusKm, interests, setInterests }
 function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests, localTime, weather }: { userContext: UserContext; radiusKm: number; setRadiusKm: (value: number) => void; interests: string[]; setInterests: (value: string[]) => void; localTime: Date; weather: WeatherState }) {
   const todayResponse = useMemo(() => buildLocalResponse(userContext), [userContext]);
   const contextualPrompts = useMemo(() => buildContextualPrompts(userContext, localTime, weather), [localTime, userContext, weather]);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const [input, setInput] = useState("");
   const [response, setResponse] = useState<AgentResponse>(todayResponse);
+  const [lastResultCards, setLastResultCards] = useState<PickCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: "welcome", role: "assistant", content: welcomeMessage }]);
   const prompts = messages.length === 1 ? contextualPrompts : response.followUps?.length ? response.followUps : buildFollowUpSuggestions(response);
 
   useEffect(() => { if (messages.length === 1) setResponse(todayResponse); }, [messages.length, todayResponse]);
+  useEffect(() => {
+    chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
 
   async function askAgent(message: string) {
     if (!message.trim()) return;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: message };
     const conversationHistory = [...messages, userMessage].filter((item) => item.id !== "welcome").slice(-8).map((item) => ({ role: item.role, content: item.content }));
+    const previousCards = lastResultCards.length ? lastResultCards : response.fallbackUsed ? [] : response.cards;
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
     try {
-      const res = await fetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "demo-session", message, context: userContext, conversationHistory }) });
+      const res = await fetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: "demo-session", message, context: userContext, conversationHistory, previousCards }) });
       const data = (await res.json()) as AgentResponse;
       setResponse(data);
+      if (data.cards.length) setLastResultCards(data.cards);
       setMessages((current) => [...current, { id: data.runId, role: "assistant", content: data.answer, cards: data.cards }]);
     } catch {
       const fallbackResponse = buildLocalResponse(userContext);
@@ -289,7 +296,7 @@ function UserMode({ userContext, radiusKm, setRadiusKm, interests, setInterests,
   }
   async function onSubmit(event: FormEvent) { event.preventDefault(); const message = input; setInput(""); await askAgent(message); }
 
-  return <div className="user-grid fixed-user-grid"><main className="main-card chat-hero fixed-panel"><div className="fixed-panel-header" style={{ display: "flex", justifyContent: "space-between" }}><h2>💬 Ask GoAround</h2><span className="muted">🛡️ {response.fallbackUsed ? "Safe fallback" : "Live Exa search"}</span></div><div className="chat-scroll flexible-scroll">{messages.map((message) => <div className={`chat-message-row ${message.role}`} key={message.id}><div className={`chat-bubble ${message.role}`}><span>{message.role === "assistant" ? "🤖" : "👤"}</span>{message.role === "assistant" ? <FormattedAssistantMessage content={message.content} /> : <span>{message.content}</span>}</div>{message.role === "assistant" && message.cards && <ResultCarousel cards={message.cards} />}</div>)}{loading && <LoadingAgentSteps />}{messages.length === 1 && <div className="empty-chat-hint"><div className="robot">🤖</div><h2>What should you do next?</h2><div className="muted">Prompts are generated from your area, time, weather, and demo persona.</div></div>}</div><div className="prompt-strip"><span>{messages.length === 1 ? "Contextual decision prompts" : response.followUps?.length ? "AI Gateway follow-ups" : "Deterministic follow-ups"}</span><div className="quick-prompts">{prompts.map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}</button>)}</div></div><form className="chat-form" onSubmit={onSubmit}><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask GoAround what to decide around this area..." /><button className="send-button" disabled={loading}>{loading ? "…" : "➤"}</button></form><div className="trace muted compact-trace"><strong>Agent trace</strong>{response.trace.map((step, index) => <div key={`${step.step}-${index}`}>• {step.step}: {step.detail}</div>)}</div></main><PicksPanel response={todayResponse} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} /></div>;
+  return <div className="user-grid fixed-user-grid"><main className="main-card chat-hero fixed-panel"><div className="fixed-panel-header" style={{ display: "flex", justifyContent: "space-between" }}><h2>💬 Ask GoAround</h2><span className="muted">🛡️ {response.fallbackUsed ? "Safe fallback" : "Live Exa search"}</span></div><div ref={chatScrollRef} className="chat-scroll flexible-scroll">{messages.map((message) => <div className={`chat-message-row ${message.role}`} key={message.id}><div className={`chat-bubble ${message.role}`}><span>{message.role === "assistant" ? "🤖" : "👤"}</span>{message.role === "assistant" ? <FormattedAssistantMessage content={message.content} /> : <span>{message.content}</span>}</div>{message.role === "assistant" && message.cards && <ResultCarousel cards={message.cards} />}</div>)}{loading && <LoadingAgentSteps />}{messages.length === 1 && <div className="empty-chat-hint"><div className="robot">🤖</div><h2>What should you do next?</h2><div className="muted">Prompts are generated from your area, time, weather, and demo persona.</div></div>}</div><div className="prompt-strip"><span>{messages.length === 1 ? "Contextual decision prompts" : response.followUps?.length ? "AI Gateway follow-ups" : "Deterministic follow-ups"}</span><div className="quick-prompts">{prompts.map((prompt) => <button key={prompt} onClick={() => askAgent(prompt)}>{prompt}</button>)}</div></div><form className="chat-form" onSubmit={onSubmit}><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask GoAround what to decide around this area..." /><button className="send-button" disabled={loading}>{loading ? "…" : "➤"}</button></form><div className="trace muted compact-trace"><strong>Agent trace</strong>{response.trace.map((step, index) => <div key={`${step.step}-${index}`}>• {step.step}: {step.detail}</div>)}</div></main><PicksPanel response={todayResponse} radiusKm={radiusKm} setRadiusKm={setRadiusKm} interests={interests} setInterests={setInterests} /></div>;
 }
 
 function BusinessMode() {
